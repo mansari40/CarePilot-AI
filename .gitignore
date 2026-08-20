@@ -1,0 +1,29 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+backend/dist/
+backend/build/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Local runtime data (bind mounts)
+data/uploads/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
