@@ -3,12 +3,17 @@
 Phase 4: the graph is a pipeline of specialist agents instead of one
 Coordinator:
 
-    safety_screen -> route_department -> book_appointment -> safety_before_confirm
+    safety_screen -> route_department -> book_appointment -> insurance_check
+                                                           -> billing_generate
+                                                           -> safety_before_confirm
                                                           -> wait_confirm (END)
        |                       |-> safety_before_clarify -> clarify (END)
        |                       `-> document_ingest -> safety_before_doc -> needs_document (END)
        |                                          `-> followup -> safety_before_respond -> respond (END)
        `-> escalate (END)
+
+Phase 6: Insurance Eligibility and Billing agents are inserted between
+appointment booking and the confirmation safety gate.
 
 * Every agent keeps looping on itself (conditional self-edge) until its
   completion tool is called, so the checkpointer persists the accumulated
@@ -36,6 +41,8 @@ from app.core.nodes import (
     NODE_DOCUMENT_INGEST,
     NODE_ESCALATE,
     NODE_FOLLOWUP,
+    NODE_INSURANCE_CHECK,
+    NODE_BILLING_GENERATE,
     NODE_NEEDS_DOCUMENT,
     NODE_RESPOND,
     NODE_ROUTE_DEPARTMENT,
@@ -46,8 +53,10 @@ from app.core.nodes import (
     NODE_SAFETY_SCREEN,
     NODE_WAIT_CONFIRM,
     AppointmentAgentNode,
+    BillingAgentNode,
     DocumentAgentNode,
     FollowupAgentNode,
+    InsuranceAgentNode,
     RoutingAgentNode,
     SafetyAgentNode,
     TerminalNode,
@@ -56,8 +65,10 @@ from app.core.nodes import (
 from app.core.state import WorkflowState
 from app.core.tools import (
     APPOINTMENT_TOOLS,
+    BILLING_TOOLS,
     DOCUMENT_TOOLS,
     FOLLOWUP_TOOLS,
+    INSURANCE_TOOLS,
     ROUTING_TOOLS,
     SAFETY_TOOLS,
 )
@@ -128,10 +139,30 @@ def _route_appointment(state: WorkflowState) -> str:
     if _must_escalate(state):
         return NODE_ESCALATE
     if state.get("appointment_id"):
-        return NODE_SAFETY_BEFORE_CONFIRM
+        return NODE_INSURANCE_CHECK
     if state.get("node_done") == NODE_BOOK_APPOINTMENT:
         return NODE_DOCUMENT_INGEST
     return NODE_BOOK_APPOINTMENT
+
+
+def _route_insurance(state: WorkflowState) -> str:
+    if state.get("status") == "failed":
+        return END
+    if _must_escalate(state):
+        return NODE_ESCALATE
+    if state.get("node_done") == NODE_INSURANCE_CHECK:
+        return NODE_BILLING_GENERATE
+    return NODE_INSURANCE_CHECK
+
+
+def _route_billing(state: WorkflowState) -> str:
+    if state.get("status") == "failed":
+        return END
+    if _must_escalate(state):
+        return NODE_ESCALATE
+    if state.get("node_done") == NODE_BILLING_GENERATE:
+        return NODE_SAFETY_BEFORE_CONFIRM
+    return NODE_BILLING_GENERATE
 
 
 def _route_document(state: WorkflowState) -> str:
@@ -196,6 +227,14 @@ def build_graph(overrides: dict | None = None) -> StateGraph:
         _node(NODE_BOOK_APPOINTMENT, AppointmentAgentNode(tool_specs=APPOINTMENT_TOOLS)),
     )
     builder.add_node(
+        NODE_INSURANCE_CHECK,
+        _node(NODE_INSURANCE_CHECK, InsuranceAgentNode(tool_specs=INSURANCE_TOOLS)),
+    )
+    builder.add_node(
+        NODE_BILLING_GENERATE,
+        _node(NODE_BILLING_GENERATE, BillingAgentNode(tool_specs=BILLING_TOOLS)),
+    )
+    builder.add_node(
         NODE_DOCUMENT_INGEST,
         _node(NODE_DOCUMENT_INGEST, DocumentAgentNode(tool_specs=DOCUMENT_TOOLS)),
     )
@@ -247,6 +286,26 @@ def build_graph(overrides: dict | None = None) -> StateGraph:
         {
             NODE_BOOK_APPOINTMENT: NODE_BOOK_APPOINTMENT,
             NODE_DOCUMENT_INGEST: NODE_DOCUMENT_INGEST,
+            NODE_INSURANCE_CHECK: NODE_INSURANCE_CHECK,
+            NODE_ESCALATE: NODE_ESCALATE,
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        NODE_INSURANCE_CHECK,
+        _route_insurance,
+        {
+            NODE_INSURANCE_CHECK: NODE_INSURANCE_CHECK,
+            NODE_BILLING_GENERATE: NODE_BILLING_GENERATE,
+            NODE_ESCALATE: NODE_ESCALATE,
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        NODE_BILLING_GENERATE,
+        _route_billing,
+        {
+            NODE_BILLING_GENERATE: NODE_BILLING_GENERATE,
             NODE_SAFETY_BEFORE_CONFIRM: NODE_SAFETY_BEFORE_CONFIRM,
             NODE_ESCALATE: NODE_ESCALATE,
             END: END,

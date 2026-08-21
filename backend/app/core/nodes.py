@@ -55,6 +55,8 @@ MAX_TURNS = 12
 NODE_SAFETY_SCREEN = "safety_screen"
 NODE_ROUTE_DEPARTMENT = "route_department"
 NODE_BOOK_APPOINTMENT = "book_appointment"
+NODE_INSURANCE_CHECK = "insurance_check"
+NODE_BILLING_GENERATE = "billing_generate"
 NODE_DOCUMENT_INGEST = "document_ingest"
 NODE_FOLLOWUP = "followup"
 NODE_SAFETY_BEFORE_CLARIFY = "safety_before_clarify"
@@ -70,6 +72,8 @@ NODE_RESPOND = "respond"
 SAFETY_SCREEN_TOOL = "complete_safety_screen"
 ROUTING_TOOL = "complete_routing"
 APPOINTMENT_TOOL = "complete_appointment"
+INSURANCE_CHECK_TOOL = "complete_insurance_check"
+BILLING_TOOL = "complete_billing"
 DOCUMENT_CHECK_TOOL = "complete_document_check"
 FOLLOWUP_TOOL = "complete_followup"
 
@@ -166,6 +170,27 @@ patient, linked to the appointment, scheduled ONE DAY BEFORE the appointment —
 is at {appointment_at}, so the reminder must be scheduled on the previous day (not at the \
 appointment time). Then call complete_followup(reminder_id=<id>, message="...").
 2. If no reminder is needed, call complete_followup(message="No reminder needed")."""
+
+INSURANCE_PROMPT = """You are the Insurance Eligibility agent of AgentCare. Today's date is {today}. \
+Patient {patient_id} has a booked appointment #{appointment_id} in {department_name}.
+
+Rules:
+1. Call lookup_insurance(patient_id={patient_id}) to see the patient's insurance status.
+2. If a policy exists, call check_eligibility(appointment_id={appointment_id}) to run the \
+eligibility pre-check against the real policy and visit type.
+3. Call complete_insurance_check with the eligibility_status (covered, needs_preauthorization, \
+not_covered, or no_policy), the insurance_check_id if a check was created, and a one-line message.
+4. Never guarantee payment or coverage. The result is an estimate only."""
+
+BILLING_PROMPT = """You are the Billing agent of AgentCare. Today's date is {today}. \
+Patient {patient_id} has a booked appointment #{appointment_id} in {department_name}.
+
+Rules:
+1. Call generate_billing_explanation(appointment_id={appointment_id}) to assemble real line items \
+from the fee schedule for this department and visit type.
+2. Call complete_billing with the billing_explanation_id, the estimated total cost as a string, \
+and a one-line message.
+3. Never issue a legally binding invoice. The result is an explanation of expected costs only."""
 
 
 class BaseAgentNode:
@@ -661,6 +686,89 @@ class FollowupAgentNode(BaseAgentNode):
         }
         if data.get("reminder_id") is not None:
             deltas["reminder_id"] = data["reminder_id"]
+        return deltas
+
+
+class InsuranceAgentNode(BaseAgentNode):
+    """Insurance Eligibility: policy lookup + eligibility check for the booked appointment."""
+
+    node_name = NODE_INSURANCE_CHECK
+    completion_tool = INSURANCE_CHECK_TOOL
+
+    def _system_prompt(self, state: WorkflowState) -> str:
+        return INSURANCE_PROMPT.format(
+            today=_today(),
+            patient_id=state.get("patient_id", "?"),
+            appointment_id=state.get("appointment_id", "?"),
+            department_name=state.get("department_name", "the routed department"),
+        )
+
+    def _on_tool_result(self, result: dict) -> dict:
+        if not result.get("ok"):
+            return {}
+        name = result["name"]
+        payload = result.get("result") or {}
+        if name == "check_eligibility" and isinstance(payload, dict):
+            return {
+                "insurance_check_id": payload.get("id"),
+                "eligibility_status": payload.get("status"),
+            }
+        return {}
+
+    def _apply_completion(self, args: BaseModel) -> dict:
+        data = args.model_dump(mode="json")
+        deltas: dict = {
+            "node_done": self.node_name,
+            "eligibility_status": data.get("eligibility_status"),
+            "status_message": data.get("message") or "Insurance check done.",
+        }
+        if data.get("insurance_check_id") is not None:
+            deltas["insurance_check_id"] = data["insurance_check_id"]
+        return deltas
+
+
+class BillingAgentNode(BaseAgentNode):
+    """Billing: fee-schedule line items and plain-language billing explanation."""
+
+    node_name = NODE_BILLING_GENERATE
+    completion_tool = BILLING_TOOL
+
+    def _system_prompt(self, state: WorkflowState) -> str:
+        return BILLING_PROMPT.format(
+            today=_today(),
+            patient_id=state.get("patient_id", "?"),
+            appointment_id=state.get("appointment_id", "?"),
+            department_name=state.get("department_name", "the routed department"),
+        )
+
+    def _on_tool_result(self, result: dict) -> dict:
+        if not result.get("ok"):
+            return {}
+        name = result["name"]
+        payload = result.get("result") or {}
+        if name == "generate_billing_explanation" and isinstance(payload, dict):
+            total = None
+            if payload.get("summary_text"):
+                import re
+
+                match = re.search(r"\$([0-9,]+\.\d{2})", payload["summary_text"])
+                if match:
+                    total = match.group(1).replace(",", "")
+            return {
+                "billing_explanation_id": payload.get("id"),
+                "estimated_cost": total,
+            }
+        return {}
+
+    def _apply_completion(self, args: BaseModel) -> dict:
+        data = args.model_dump(mode="json")
+        deltas: dict = {
+            "node_done": self.node_name,
+            "estimated_cost": data.get("estimated_cost"),
+            "status_message": data.get("message") or "Billing step done.",
+        }
+        if data.get("billing_explanation_id") is not None:
+            deltas["billing_explanation_id"] = data["billing_explanation_id"]
         return deltas
 
 

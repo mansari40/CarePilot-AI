@@ -9,6 +9,9 @@ Department Routing, Appointment, Document, Follow-up).  The specialist
 channels below (department_id, appointment_id, ...) are the coordination
 contract between nodes: each node reads what it needs and writes its
 outcome, and the conditional edges decide the next node.
+
+Phase 6: Insurance Eligibility and Billing agents are inserted after
+appointment booking and before the confirmation safety gate.
 """
 
 import operator
@@ -76,6 +79,14 @@ class WorkflowState(TypedDict, total=False):
 
     # Follow-up node outcome.
     reminder_id: int | None
+
+    # Insurance node outcome (Phase 6).
+    insurance_check_id: int | None
+    eligibility_status: str | None  # "covered" | "needs_preauthorization" | "not_covered" | "no_policy"
+
+    # Billing node outcome (Phase 6).
+    billing_explanation_id: int | None
+    estimated_cost: str | None  # Decimal as string for JSON safety
 
     # Last node that finished its step via its completion tool.
     node_done: str | None

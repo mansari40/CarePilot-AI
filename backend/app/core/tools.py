@@ -13,6 +13,11 @@ agent only sees the tools for its own responsibility:
 * ``DOCUMENT_TOOLS``    — Document node (documents only).
 * ``FOLLOWUP_TOOLS``    — Follow-up node (reminders only).
 
+Phase 6: Insurance Eligibility and Billing agents:
+
+* ``INSURANCE_TOOLS``   — Insurance Eligibility node (policy lookup + eligibility check).
+* ``BILLING_TOOLS``     — Billing node (fee schedule + billing explanation).
+
 Each node also carries its own completion (decision) tool — the one tool that
 signals "my step is done" and routes the graph forward.
 """
@@ -44,6 +49,8 @@ from app.tools.documents import (
 from app.tools.escalations import create_escalation
 from app.tools.reminders import create_reminder
 from app.tools.slots import list_available_slots
+from app.tools.insurance import lookup_insurance, check_eligibility
+from app.tools.billing import lookup_fee_items, generate_billing_explanation
 
 
 def _parse_dt(value: str) -> datetime:
@@ -165,6 +172,41 @@ class CompleteDocumentCheckArgs(BaseModel):
 class CompleteFollowupArgs(BaseModel):
     reminder_id: int | None = Field(default=None, description="Id of the created reminder, if any.")
     message: str = Field(description="One-line status of the follow-up step.")
+
+
+class LookupInsuranceArgs(BaseModel):
+    patient_id: int
+
+
+class CheckEligibilityArgs(BaseModel):
+    appointment_id: int
+
+
+class CompleteInsuranceCheckArgs(BaseModel):
+    insurance_check_id: int | None = Field(
+        default=None, description="Id of the eligibility check record, or null if no policy found."
+    )
+    eligibility_status: str = Field(
+        description="covered, needs_preauthorization, not_covered, or no_policy."
+    )
+    message: str = Field(description="One-line status of the insurance step.")
+
+
+class LookupFeeItemsArgs(BaseModel):
+    department_id: int
+    category: str | None = Field(default=None, description="Optional filter: consultation, follow_up, procedure.")
+
+
+class GenerateBillingExplanationArgs(BaseModel):
+    appointment_id: int
+
+
+class CompleteBillingArgs(BaseModel):
+    billing_explanation_id: int | None = Field(
+        default=None, description="Id of the billing explanation record."
+    )
+    estimated_cost: str | None = Field(default=None, description="Estimated total as a decimal string, e.g. '150.00'.")
+    message: str = Field(description="One-line status of the billing step.")
 
 
 def _slots_with_window(
@@ -394,6 +436,50 @@ FOLLOWUP_TOOLS: list[ToolSpec] = [
         description="Call ONLY when the follow-up step is finished: report the created reminder id, "
         "or confirm no reminder is needed.",
         args_schema=CompleteFollowupArgs,
+        func=lambda session, **kwargs: {"completed": True},
+    ),
+]
+
+INSURANCE_TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        name="lookup_insurance",
+        description="Look up a patient's insurance policy status (active, expired, inactive, or missing).",
+        args_schema=LookupInsuranceArgs,
+        func=lookup_insurance,
+    ),
+    ToolSpec(
+        name="check_eligibility",
+        description="Run an eligibility pre-check for a booked appointment against the patient's policy. "
+        "Returns a result grounded in the patient's real policy data.",
+        args_schema=CheckEligibilityArgs,
+        func=check_eligibility,
+    ),
+    ToolSpec(
+        name="complete_insurance_check",
+        description="Call ONLY when the insurance eligibility step is done: report the eligibility status "
+        "and the check record id.",
+        args_schema=CompleteInsuranceCheckArgs,
+        func=lambda session, **kwargs: {"completed": True},
+    ),
+]
+
+BILLING_TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        name="lookup_fee_items",
+        description="Look up fee schedule items for a department, optionally filtered by category.",
+        args_schema=LookupFeeItemsArgs,
+        func=lookup_fee_items,
+    ),
+    ToolSpec(
+        name="generate_billing_explanation",
+        description="Generate a billing explanation with line items from the fee schedule for a booked appointment.",
+        args_schema=GenerateBillingExplanationArgs,
+        func=generate_billing_explanation,
+    ),
+    ToolSpec(
+        name="complete_billing",
+        description="Call ONLY when the billing step is done: report the explanation id and estimated cost.",
+        args_schema=CompleteBillingArgs,
         func=lambda session, **kwargs: {"completed": True},
     ),
 ]
