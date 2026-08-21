@@ -25,6 +25,7 @@ class FakeChatModel:
         self.script = list(script)
         self.seen_messages = []
         self.bound_tools = []
+        self._appointment_id = None
 
     def bind_tools(self, tools, **kwargs):
         self.bound_tools.append([t["function"]["name"] for t in tools])
@@ -34,7 +35,10 @@ class FakeChatModel:
         self.seen_messages.append(messages)
         if not self.script:
             raise AssertionError("FakeChatModel ran out of scripted responses")
-        return self.script.pop(0)
+        msg = self.script.pop(0)
+        if self._appointment_id is not None:
+            msg = _patch_appointment_id(msg, self._appointment_id)
+        return msg
 
 
 class FakeHolder:
@@ -62,8 +66,50 @@ def ai_text(text="Done."):
     return AIMessage(content=text)
 
 
+def _patch_appointment_id(msg: AIMessage, appointment_id: int) -> AIMessage:
+    """Replace placeholder appointment_id=0 in tool call args with the real id."""
+    if not hasattr(msg, "tool_calls") or not msg.tool_calls:
+        return msg
+    patched_calls = []
+    for tc in msg.tool_calls:
+        args = dict(tc["args"])
+        if args.get("appointment_id") == 0:
+            args["appointment_id"] = appointment_id
+        patched_calls.append({**tc, "args": args})
+    return msg.model_copy(update={"tool_calls": patched_calls})
+
+
 def safe_screen(reason="All good."):
     return ai_with_tool("complete_safety_screen", {"safe": True, "reason": reason})
+
+
+def complete_billing(explanation_id=None, cost="150.00"):
+    return ai_with_tool(
+        "complete_billing",
+        {
+            "billing_explanation_id": explanation_id,
+            "estimated_cost": cost,
+            "message": "Billing explanation generated",
+        },
+    )
+
+
+def insurance_and_billing_responses(check_id=None, explanation_id=None, cost="150.00"):
+    """Return the standard insurance + billing fake responses for Phase 4 tests.
+
+    These call the completion tools directly (skipping lookup tools) so no
+    real appointment_id is needed.  Phase 6 tests cover the full flow.
+    """
+    return [
+        ai_with_tool(
+            "complete_insurance_check",
+            {"insurance_check_id": check_id, "eligibility_status": "covered", "message": "Insurance: covered"},
+        ),
+        ai_with_tool(
+            "complete_billing",
+            {"billing_explanation_id": explanation_id, "estimated_cost": cost, "message": "Billing done"},
+        ),
+    ]
 
 
 @pytest.fixture
@@ -200,6 +246,7 @@ def test_full_pipeline_books_pauses_resumes_completes(db, fake_llm):
             ai_with_tool("complete_routing", _routing(patient, dept, needs_document=True, needs_reminder=True)),
             ai_with_tool("list_available_slots", _slot_window(slot, dept)),
             ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+            *insurance_and_billing_responses(),
             safe_screen("Booking is safe administrative content."),
         ]
     )
@@ -274,6 +321,7 @@ def test_malformed_tool_args_retried_and_not_persisted(db, fake_llm):
             ai_with_tool("complete_routing", _routing(patient, dept)),
             ai_with_tool("book_appointment", bad_args, call_id="call_bad"),
             ai_with_tool("book_appointment", good_args, call_id="call_good"),
+            *insurance_and_billing_responses(),
             safe_screen(),
         ]
     )
@@ -307,6 +355,7 @@ def test_tool_error_fed_back_to_llm(db, fake_llm):
                     ("book_appointment", args, "call_2"),
                 ]
             ),
+            *insurance_and_billing_responses(),
             safe_screen(),
         ]
     )
@@ -384,6 +433,7 @@ def test_ambiguous_department_asks_clarify_then_resumes(db, fake_llm):
             ai_with_tool("complete_routing", _routing(patient, dept)),
             ai_with_tool("list_available_slots", _slot_window(slot, dept)),
             ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+            *insurance_and_billing_responses(),
             safe_screen(),
         ]
     )
@@ -407,6 +457,7 @@ def test_missing_document_waits_then_resumes_with_upload(db, fake_llm):
             ai_with_tool("complete_routing", _routing(patient, dept, needs_document=True)),
             ai_with_tool("list_available_slots", _slot_window(slot, dept)),
             ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+            *insurance_and_billing_responses(),
             safe_screen(),
         ]
     )
