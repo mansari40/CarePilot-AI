@@ -42,7 +42,7 @@ def register(payload: UserCreate, db: Annotated[Session, Depends(get_db)]) -> Us
         profile = PatientProfile(
             user_id=user.id,
             date_of_birth="2000-01-01",
-            preferred_language="en",
+            preferred_language=payload.preferred_language or "en",
             contact_status="new",
         )
         db.add(profile)

@@ -12,6 +12,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=128)
+    preferred_language: str = Field(default="en", max_length=10)
 
 
 class UserLogin(BaseModel):

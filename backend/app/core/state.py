@@ -12,6 +12,9 @@ outcome, and the conditional edges decide the next node.
 
 Phase 6: Insurance Eligibility and Billing agents are inserted after
 appointment booking and before the confirmation safety gate.
+
+Phase 7: preferred_language is added so terminal nodes can produce
+patient-facing text in the correct language.
 """
 
 import operator
@@ -51,6 +54,9 @@ class WorkflowState(TypedDict, total=False):
     turns: int
     messages: Annotated[list[AnyMessage], operator.add]
     tool_results: Annotated[list[dict[str, Any]], operator.add]
+
+    # Phase 7: patient's preferred language for outgoing text.
+    preferred_language: str
 
     # Safety & Escalation outcomes.
     safety_verdict: str | None  # "safe" | "escalate"
