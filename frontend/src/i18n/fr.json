@@ -1,0 +1,79 @@
+﻿{
+    "nav":  {
+                "home":  "Accueil",
+                "register":  "S\u0027inscrire",
+                "login":  "Se connecter",
+                "profile":  "Profil",
+                "logout":  "Deconnexion",
+                "dashboard":  "Tableau de bord"
+            },
+    "home":  {
+                 "title":  "AgentCare",
+                 "subtitle":  "IA agentic pour l\u0027administration des patients et la coordination des soins.",
+                 "checking":  "Verification du backendâ€¦",
+                 "backend_ok":  "Backend: {{status}} ({{service}})",
+                 "backend_error":  "Backend inaccessible: {{error}}"
+             },
+    "register":  {
+                     "title":  "Creer un Compte",
+                     "full_name":  "Nom Complet",
+                     "email":  "Adresse E-mail",
+                     "password":  "Mot de Passe",
+                     "language":  "Langue Preferee",
+                     "submit":  "S\u0027inscrire",
+                     "has_account":  "Vous avez deja un compte?",
+                     "login_link":  "Se connecter",
+                     "error_exists":  "Cet e-mail est deja inscrit",
+                     "success":  "Compte cree!"
+                 },
+    "login":  {
+                  "title":  "Connexion",
+                  "email":  "Adresse E-mail",
+                  "password":  "Mot de Passe",
+                  "submit":  "Connexion",
+                  "no_account":  "Pas encore de compte?",
+                  "register_link":  "S\u0027inscrire",
+                  "error_invalid":  "E-mail ou mot de passe invalide"
+              },
+    "profile":  {
+                    "title":  "Mon Profil",
+                    "full_name":  "Nom Complet",
+                    "email":  "Adresse E-mail",
+                    "phone":  "Telephone",
+                    "language":  "Langue Preferee",
+                    "contact_status":  "Statut de Contact",
+                    "save":  "Enregistrer",
+                    "saved":  "Profil mis a jour!"
+                },
+    "languages":  {
+                      "en":  "Anglais",
+                      "es":  "Espagnol",
+                      "fr":  "Francais",
+                      "ar":  "Arabe",
+                      "hi":  "Hindi",
+                      "ur":  "Ourdou"
+                  },
+    "dashboard":  {
+                      "doc_completion":  "Achvement des Documents",
+                      "seconds":  "secondes",
+                      "open":  "Ouvertes",
+                      "total":  "Total",
+                      "total_appts":  "Total des Rendez-vous",
+                      "samples":  "echantillons",
+                      "appt_by_status":  "Rendez-vous par Statut",
+                      "loading":  "Chargement du tableau…",
+                      "avg_resolution":  "Resolution Moy.",
+                      "title":  "Tableau de bord Analytique",
+                      "insurance_outcomes":  "Resultats d\u0027Eligibilite",
+                      "no_data":  "Aucune donnee disponible",
+                      "avg_booking":  "Temps Moyen de Reservation",
+                      "resolved":  "Resolues",
+                      "appt_by_dept":  "Rendez-vous par Departement",
+                      "access_denied":  "Acces personnel requis",
+                      "with_docs":  "Avec Documents",
+                      "busiest_doctors":  "Medecins les Plus Occupes",
+                      "rate":  "Taux",
+                      "busiest_days":  "Jours les Plus Charges",
+                      "escalations":  "Escalades"
+                  }
+}

@@ -10,8 +10,13 @@
   },
   "dependencies": {
     "framer-motion": "^11.11.17",
+    "i18next": "^26.4.0",
+    "i18next-browser-languagedetector": "^8.2.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-i18next": "^17.0.12",
+    "react-router-dom": "^7.18.2",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

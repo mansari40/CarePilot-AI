@@ -1,0 +1,79 @@
+{
+  "nav": {
+    "home": "Home",
+    "register": "Register",
+    "login": "Login",
+    "profile": "Profile",
+    "logout": "Logout",
+    "dashboard": "Dashboard"
+  },
+  "home": {
+    "title": "AgentCare",
+    "subtitle": "Agentic AI for patient administration and care coordination.",
+    "checking": "Checking backend…",
+    "backend_ok": "Backend: {{status}} ({{service}})",
+    "backend_error": "Backend unreachable: {{error}}"
+  },
+  "register": {
+    "title": "Create Account",
+    "full_name": "Full Name",
+    "email": "Email",
+    "password": "Password",
+    "language": "Preferred Language",
+    "submit": "Register",
+    "has_account": "Already have an account?",
+    "login_link": "Login",
+    "error_exists": "Email already registered",
+    "success": "Account created!"
+  },
+  "login": {
+    "title": "Sign In",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Login",
+    "no_account": "Don't have an account?",
+    "register_link": "Register",
+    "error_invalid": "Invalid email or password"
+  },
+  "profile": {
+    "title": "My Profile",
+    "full_name": "Full Name",
+    "email": "Email",
+    "phone": "Phone",
+    "language": "Preferred Language",
+    "contact_status": "Contact Status",
+    "save": "Save Changes",
+    "saved": "Profile updated!"
+  },
+  "languages": {
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "ar": "Arabic",
+    "hi": "Hindi",
+    "ur": "Urdu"
+  },
+  "dashboard": {
+    "title": "Analytics Dashboard",
+    "appt_by_dept": "Appointments by Department",
+    "appt_by_status": "Appointments by Status",
+    "avg_booking": "Avg. Time to Booking",
+    "seconds": "seconds",
+    "samples": "samples",
+    "doc_completion": "Document Completion",
+    "total_appts": "Total Appointments",
+    "with_docs": "With Documents",
+    "rate": "Rate",
+    "escalations": "Escalations",
+    "total": "Total",
+    "open": "Open",
+    "resolved": "Resolved",
+    "avg_resolution": "Avg. Resolution",
+    "insurance_outcomes": "Insurance Eligibility Outcomes",
+    "busiest_doctors": "Busiest Doctors",
+    "busiest_days": "Busiest Days",
+    "no_data": "No data available",
+    "access_denied": "Staff access required",
+    "loading": "Loading dashboard…"
+  }
+}

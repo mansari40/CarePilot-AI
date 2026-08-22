@@ -1,0 +1,79 @@
+﻿{
+    "nav":  {
+                "home":  "گھر",
+                "register":  "رجسٹر",
+                "login":  "لاگ ان",
+                "profile":  "پروفائل",
+                "logout":  "لاگ آؤٹ",
+                "dashboard":  "ڈیش بورڈ"
+            },
+    "home":  {
+                 "title":  "AgentCare",
+                 "subtitle":  "مریضو کے انتظام اور دیکھ بھال کے ضابطے کے لیے ایجنٹک AI۔",
+                 "checking":  "بیک اینڈ چیک ہو رہا ہے…",
+                 "backend_ok":  "بیک اینڈ: {{status}} ({{service}})",
+                 "backend_error":  "بیک اینڈ دستیاب نہیں: {{error}}"
+             },
+    "register":  {
+                     "title":  "اکاؤنٹ بنائیں",
+                     "full_name":  "پورا نام",
+                     "email":  "ای میل",
+                     "password":  "پاس ورڈ",
+                     "language":  "ترجیحی زبان",
+                     "submit":  "رجسٹر کریں",
+                     "has_account":  "پہلے سے اکاؤنٹ ہے؟",
+                     "login_link":  "لاگ ان کریں",
+                     "error_exists":  "ای میل پہلے سے رجسٹرڈ ہے",
+                     "success":  "اکاؤنٹ بنایا گیا!"
+                 },
+    "login":  {
+                  "title":  "سائن ان",
+                  "email":  "ای میل",
+                  "password":  "پاس ورڈ",
+                  "submit":  "لاگ ان",
+                  "no_account":  "اکاؤنٹ نہیں ہے؟",
+                  "register_link":  "رجسٹر کریں",
+                  "error_invalid":  "ای میل یا پاس ورڈ غلط ہے"
+              },
+    "profile":  {
+                    "title":  "میری پروفائل",
+                    "full_name":  "پورا نام",
+                    "email":  "ای میل",
+                    "phone":  "فون",
+                    "language":  "ترجیحی زبان",
+                    "contact_status":  "رابطے کی حالت",
+                    "save":  "تبدیلیاں محفوظ کریں",
+                    "saved":  "پروفائل اپڈیٹ!"
+                },
+    "languages":  {
+                      "en":  "انگریزی",
+                      "es":  "ہسپانوی",
+                      "fr":  "فرانسیسی",
+                      "ar":  "عربی",
+                      "hi":  "ہندی",
+                      "ur":  "اردو"
+                  },
+    "dashboard":  {
+                      "doc_completion":  "دستاویزات مکمل ہونے کی شرح",
+                      "seconds":  "سیکنڈ",
+                      "open":  "کھلی",
+                      "total":  "کل",
+                      "total_appts":  "کل ملاقاتیں",
+                      "samples":  "نمونے",
+                      "appt_by_status":  "حالت کے مطابق ملاقاتیں",
+                      "loading":  "ڈیش بورڈ لوڈ ہو رہا ہے…",
+                      "avg_resolution":  "وسط حل",
+                      "title":  "انلاٹکس ڈیش بورڈ",
+                      "insurance_outcomes":  "انشورنس اہلیتے کے نتائج",
+                      "no_data":  "کوئی ڈیٹا دستیاب نہیں",
+                      "avg_booking":  "بکنگ کا اوسط وقت",
+                      "resolved":  "حل شدہ",
+                      "appt_by_dept":  "محکمے کے مطابق ملاقاتیں",
+                      "access_denied":  "عملے کی رسائی درکار ہے",
+                      "with_docs":  "دستاویزات کے ساتھ",
+                      "busiest_doctors":  "سب سے مصروف ڈاکٹر",
+                      "rate":  "شرح",
+                      "busiest_days":  "سب سے مصروف دن",
+                      "escalations":  "اسکیلیشن"
+                  }
+}

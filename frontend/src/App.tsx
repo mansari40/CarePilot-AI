@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 type Health = { status: string; service: string };
 
-export default function App() {
+export default function HomePage() {
+  const { t } = useTranslation();
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,16 +18,14 @@ export default function App() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-800">
       <div className="max-w-md text-center">
-        <h1 className="text-2xl font-semibold text-teal-700">AgentCare</h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Agentic AI for patient administration and care coordination.
-        </p>
+        <h1 className="text-2xl font-semibold text-teal-700">{t("home.title")}</h1>
+        <p className="mt-2 text-sm text-slate-500">{t("home.subtitle")}</p>
         <p className="mt-6 text-xs text-slate-400">
           {error
-            ? `Backend unreachable: ${error}`
+            ? t("home.backend_error", { error })
             : health
-              ? `Backend: ${health.status} (${health.service})`
-              : "Checking backend…"}
+              ? t("home.backend_ok", { status: health.status, service: health.service })
+              : t("home.checking")}
         </p>
       </div>
     </div>

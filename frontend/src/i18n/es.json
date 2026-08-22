@@ -1,0 +1,79 @@
+﻿{
+    "nav":  {
+                "home":  "Inicio",
+                "register":  "Registrarse",
+                "login":  "Iniciar sesion",
+                "profile":  "Perfil",
+                "logout":  "Cerrar sesion",
+                "dashboard":  "Panel"
+            },
+    "home":  {
+                 "title":  "AgentCare",
+                 "subtitle":  "IA agentic para administracion de pacientes y coordinacion de cuidados.",
+                 "checking":  "Verificando backendâ€¦",
+                 "backend_ok":  "Backend: {{status}} ({{service}})",
+                 "backend_error":  "Backend inalcanzable: {{error}}"
+             },
+    "register":  {
+                     "title":  "Crear Cuenta",
+                     "full_name":  "Nombre Completo",
+                     "email":  "Correo Electronico",
+                     "password":  "Contrasena",
+                     "language":  "Idioma Preferido",
+                     "submit":  "Registrarse",
+                     "has_account":  "Ya tienes una cuenta?",
+                     "login_link":  "Iniciar sesion",
+                     "error_exists":  "El correo ya esta registrado",
+                     "success":  "Cuenta creada!"
+                 },
+    "login":  {
+                  "title":  "Iniciar Sesion",
+                  "email":  "Correo Electronico",
+                  "password":  "Contrasena",
+                  "submit":  "Entrar",
+                  "no_account":  "No tienes cuenta?",
+                  "register_link":  "Registrarse",
+                  "error_invalid":  "Correo o contrasena invalidos"
+              },
+    "profile":  {
+                    "title":  "Mi Perfil",
+                    "full_name":  "Nombre Completo",
+                    "email":  "Correo Electronico",
+                    "phone":  "Telefono",
+                    "language":  "Idioma Preferido",
+                    "contact_status":  "Estado de Contacto",
+                    "save":  "Guardar Cambios",
+                    "saved":  "Perfil actualizado!"
+                },
+    "languages":  {
+                      "en":  "Ingles",
+                      "es":  "Espanol",
+                      "fr":  "Frances",
+                      "ar":  "Arabe",
+                      "hi":  "Hindi",
+                      "ur":  "Urdu"
+                  },
+    "dashboard":  {
+                      "doc_completion":  "Completitud de Documentos",
+                      "seconds":  "segundos",
+                      "open":  "Abiertas",
+                      "total":  "Total",
+                      "total_appts":  "Total de Citas",
+                      "samples":  "muestras",
+                      "appt_by_status":  "Citas por Estado",
+                      "loading":  "Cargando panel…",
+                      "avg_resolution":  "Resolucion Prom.",
+                      "title":  "Panel de Analiticas",
+                      "insurance_outcomes":  "Resultados de Elegibilidad",
+                      "no_data":  "Sin datos disponibles",
+                      "avg_booking":  "Tiempo Prom. de Reserva",
+                      "resolved":  "Resueltas",
+                      "appt_by_dept":  "Citas por Departamento",
+                      "access_denied":  "Acceso de personal requerido",
+                      "with_docs":  "Con Documentos",
+                      "busiest_doctors":  "Doctores Mas Ocupados",
+                      "rate":  "Tasa",
+                      "busiest_days":  "Dias Mas Ocupados",
+                      "escalations":  "Escalaciones"
+                  }
+}
