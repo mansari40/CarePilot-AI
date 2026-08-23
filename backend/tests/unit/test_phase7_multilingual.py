@@ -144,14 +144,6 @@ class TestTranslationFunctions:
             result = translate_from_english("Appointment booked", "es")
             assert result == "Cita reservada"
 
-    def test_translate_from_english_translates_to_arabic(self):
-        with patch("app.services.translation.get_llm") as mock_get_llm:
-            mock_model = MagicMock()
-            mock_model.invoke.return_value = MagicMock(content="تم حجز الموعد")
-            mock_get_llm.return_value = mock_model
-            result = translate_from_english("Appointment booked", "ar")
-            assert result == "تم حجز الموعد"
-
     def test_translate_from_english_falls_back_on_error(self):
         with patch("app.services.translation.get_llm") as mock_get_llm:
             mock_model = MagicMock()
@@ -163,10 +155,10 @@ class TestTranslationFunctions:
     def test_supported_languages_dict(self):
         assert "en" in SUPPORTED_LANGUAGES
         assert "es" in SUPPORTED_LANGUAGES
-        assert "ar" in SUPPORTED_LANGUAGES
         assert "fr" in SUPPORTED_LANGUAGES
-        assert "hi" in SUPPORTED_LANGUAGES
-        assert "ur" in SUPPORTED_LANGUAGES
+        assert "prs" in SUPPORTED_LANGUAGES
+        assert "ps" in SUPPORTED_LANGUAGES
+        assert len(SUPPORTED_LANGUAGES) == 5
 
     def test_empty_text_not_translated(self):
         assert translate_to_english("", "es") == ""

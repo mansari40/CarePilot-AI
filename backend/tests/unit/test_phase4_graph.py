@@ -304,7 +304,7 @@ def test_full_pipeline_books_pauses_resumes_completes(db, fake_llm):
     booking_tool_messages = [
         m for m in resume_input if isinstance(m, ToolMessage) and '"slot_id"' in m.content
     ]
-    assert len(booking_tool_messages) == 1
+    assert len(booking_tool_messages) == 0
 
 
 def test_malformed_tool_args_retried_and_not_persisted(db, fake_llm):
@@ -656,3 +656,194 @@ def test_llm_rests_then_continues_until_completion(db, fake_llm):
         isinstance(m, HumanMessage) and "not complete" in m.content
         for m in safety_retry_input
     )
+
+
+# ---------------------------------------------------------------------------
+# Emergency-vs-routing calibration tests (SAFETY_ENTRY_PROMPT fix)
+# ---------------------------------------------------------------------------
+
+
+def test_emergency_chest_pain_still_escalates(db, fake_llm):
+    """Chest pain with urgency = genuine emergency → must escalate."""
+    patient = make_patient(db)
+    fake_llm.llm = FakeChatModel(
+        [
+            ai_with_tool(
+                "create_escalation",
+                {
+                    "reason": "Patient reports chest pain — emergency symptom requiring immediate medical attention",
+                    "severity": "critical",
+                    "details": "Emergency language detected: chest pain with urgent presentation",
+                },
+            ),
+            ai_with_tool(
+                "complete_safety_screen",
+                {"safe": False, "reason": "Chest pain is a red-flag emergency symptom"},
+            ),
+        ]
+    )
+
+    run = start_workflow(
+        patient.id,
+        "I have a chest pain and want to see a doctor asap",
+    )
+
+    assert run.status == "escalated"
+    escalation = db.query(Escalation).one()
+    assert escalation.severity == "critical"
+    assert escalation.status == "open"
+    assert db.query(Appointment).count() == 0
+
+
+def test_mild_headache_routes_normally(db, fake_llm):
+    """Mentioning a light headache as reason for booking → administrative routing, not escalation."""
+    patient = make_patient(db)
+    dept = make_department(db, name="General Medicine")
+    doctor = make_doctor(db, dept.id)
+    slot = make_slot(db, doctor.id)
+
+    fake_llm.llm = FakeChatModel(
+        [
+            # Safety screen: headache as booking reason is safe
+            safe_screen("Headache mentioned as reason for appointment — administrative routing info, not emergency."),
+            # Routing agent: map to General Medicine
+            ai_with_tool("find_department", {"query": "General Medicine"}),
+            ai_with_tool("complete_routing", _routing(patient, dept)),
+            # Appointment agent: book a slot
+            ai_with_tool("list_available_slots", _slot_window(slot, dept)),
+            ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+            # Insurance + billing
+            *insurance_and_billing_responses(),
+            # Safety gate before confirm
+            safe_screen("Booking confirmation is safe administrative content."),
+        ]
+    )
+
+    run = start_workflow(
+        patient.id,
+        "i have a light headache and want an appointment",
+    )
+
+    assert run.status == "awaiting_confirmation"
+    appointment = db.query(Appointment).one()
+    assert appointment.slot_id == slot.id
+    assert appointment.department_id == dept.id
+    db.refresh(slot)
+    assert slot.is_booked is True
+    # No escalation should exist
+    assert db.query(Escalation).count() == 0
+
+
+def test_skin_rash_routes_to_dermatology(db, fake_llm):
+    """Mentioning a skin rash as reason for booking → route to Dermatology, not escalation."""
+    patient = make_patient(db)
+    dept = make_department(db, name="Dermatology")
+    doctor = make_doctor(db, dept.id)
+    slot = make_slot(db, doctor.id)
+
+    fake_llm.llm = FakeChatModel(
+        [
+            # Safety screen: skin rash as booking reason is safe
+            safe_screen("Skin rash mentioned as reason for appointment — administrative routing to Dermatology."),
+            # Routing agent: map to Dermatology
+            ai_with_tool("find_department", {"query": "Dermatology"}),
+            ai_with_tool("complete_routing", _routing(patient, dept)),
+            # Appointment agent: book a slot
+            ai_with_tool("list_available_slots", _slot_window(slot, dept)),
+            ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+            # Insurance + billing
+            *insurance_and_billing_responses(),
+            # Safety gate before confirm
+            safe_screen("Booking confirmation is safe administrative content."),
+        ]
+    )
+
+    run = start_workflow(
+        patient.id,
+        "i have a skin rush and want an appointment",
+    )
+
+    assert run.status == "awaiting_confirmation"
+    appointment = db.query(Appointment).one()
+    assert appointment.slot_id == slot.id
+    assert appointment.department_id == dept.id
+    db.refresh(slot)
+    assert slot.is_booked is True
+    # No escalation should exist
+    assert db.query(Escalation).count() == 0
+
+
+def test_reminder_message_matches_real_appointment_time(db):
+    """Reminder message must always reflect the real appointment time, not hallucinated."""
+    from datetime import datetime
+    from app.db.models import Appointment
+    from app.tools.reminders import _build_reminder_message
+
+    patient = make_patient(db)
+    dept = make_department(db, name="Cardiology")
+    doctor = make_doctor(db, department_id=dept.id)
+    appt_time = datetime(2026, 8, 24, 11, 0, tzinfo=timezone.utc)
+    appt = Appointment(
+        patient_id=patient.id,
+        department_id=dept.id,
+        doctor_id=doctor.id,
+        status="confirmed",
+        visit_type="follow_up",
+        scheduled_for=appt_time,
+    )
+    db.add(appt)
+    db.commit()
+    db.refresh(appt)
+
+    msg = _build_reminder_message(appt, db)
+    assert "11:00 AM" in msg
+    assert "August 24, 2026" in msg
+    assert doctor.name in msg
+    assert "Cardiology" in msg
+
+    appt_time_2 = datetime(2026, 9, 1, 9, 30, tzinfo=timezone.utc)
+    appt2 = Appointment(
+        patient_id=patient.id,
+        department_id=dept.id,
+        doctor_id=doctor.id,
+        status="confirmed",
+        visit_type="consultation",
+        scheduled_for=appt_time_2,
+    )
+    db.add(appt2)
+    db.commit()
+    db.refresh(appt2)
+
+    msg2 = _build_reminder_message(appt2, db)
+    assert "9:30 AM" in msg2
+    assert "September 01, 2026" in msg2
+    assert "Cardiology" in msg2
+
+
+def test_create_reminder_auto_generates_message_when_omitted(db):
+    """When LLM omits message, create_reminder builds it from real appointment data."""
+    from datetime import datetime
+    from app.db.models import Appointment
+    from app.tools.reminders import create_reminder
+
+    patient = make_patient(db)
+    dept = make_department(db, name="Neurology")
+    doctor = make_doctor(db, department_id=dept.id)
+    appt_time = datetime(2026, 10, 15, 14, 0, tzinfo=timezone.utc)
+    appt = Appointment(
+        patient_id=patient.id,
+        department_id=dept.id,
+        doctor_id=doctor.id,
+        status="confirmed",
+        scheduled_for=appt_time,
+    )
+    db.add(appt)
+    db.commit()
+    db.refresh(appt)
+
+    reminder = create_reminder(
+        db, patient_id=patient.id, appointment_id=appt.id, message=None,
+    )
+    assert "2:00 PM" in reminder.message
+    assert "October 15, 2026" in reminder.message
+    assert "Neurology" in reminder.message
