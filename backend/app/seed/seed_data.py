@@ -13,6 +13,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.security import hash_password
 from app.db.models import (
     Appointment,
     AppointmentSlot,
@@ -62,6 +63,12 @@ def seed(session: Session) -> None:
         full_name="Tom Rodriguez",
         role="staff",
     )
+    staff_admin = User(
+        email="admin@carepilot.com",
+        hashed_password=hash_password("abcdef123456!"),
+        full_name="Admin User",
+        role="staff",
+    )
     patients = [
         User(email="aisha.khan@example.test", hashed_password="(synthetic-pw)", full_name="Aisha Khan", role="patient"),
         User(email="carlos.mendoza@example.test", hashed_password="(synthetic-pw)", full_name="Carlos Mendoza", role="patient"),
@@ -72,7 +79,7 @@ def seed(session: Session) -> None:
         User(email="john.carter@example.test", hashed_password="(synthetic-pw)", full_name="John Carter", role="patient"),
         User(email="elena.petrova@example.test", hashed_password="(synthetic-pw)", full_name="Elena Petrova", role="patient"),
     ]
-    session.add_all([staff_mitchell, staff_rodriguez, *patients])
+    session.add_all([staff_mitchell, staff_rodriguez, staff_admin, *patients])
     session.flush()
 
     # ── Patient profiles (contact statuses: new / contacted / active) ─────
@@ -80,9 +87,9 @@ def seed(session: Session) -> None:
         PatientProfile(user_id=patients[0].id, date_of_birth=date(1986, 3, 14), gender="female", phone="+1 555 010 2201", preferred_language="en", contact_status="active", emergency_contact_name="Omar Khan", emergency_contact_phone="+1 555 010 2202"),
         PatientProfile(user_id=patients[1].id, date_of_birth=date(1978, 11, 2), gender="male", phone="+1 555 010 3301", preferred_language="es", contact_status="active", emergency_contact_name="Lucia Mendoza", emergency_contact_phone="+1 555 010 3302"),
         PatientProfile(user_id=patients[2].id, date_of_birth=date(1992, 7, 21), gender="female", phone="+1 555 010 4401", preferred_language="fr", contact_status="contacted", emergency_contact_name="Paul Dubois", emergency_contact_phone="+1 555 010 4402"),
-        PatientProfile(user_id=patients[3].id, date_of_birth=date(1959, 1, 30), gender="female", phone="+1 555 010 5501", preferred_language="ar", contact_status="contacted", emergency_contact_name="Hassan Al-Rashid", emergency_contact_phone="+1 555 010 5502"),
-        PatientProfile(user_id=patients[4].id, date_of_birth=date(2001, 9, 8), gender="female", phone="+1 555 010 6601", preferred_language="hi", contact_status="active", emergency_contact_name="Ravi Sharma", emergency_contact_phone="+1 555 010 6602"),
-        PatientProfile(user_id=patients[5].id, date_of_birth=date(1989, 5, 17), gender="male", phone="+1 555 010 7701", preferred_language="ur", contact_status="new", emergency_contact_name="Zainab Hussain", emergency_contact_phone="+1 555 010 7702"),
+        PatientProfile(user_id=patients[3].id, date_of_birth=date(1959, 1, 30), gender="female", phone="+1 555 010 5501", preferred_language="en", contact_status="contacted", emergency_contact_name="Hassan Al-Rashid", emergency_contact_phone="+1 555 010 5502"),
+        PatientProfile(user_id=patients[4].id, date_of_birth=date(2001, 9, 8), gender="female", phone="+1 555 010 6601", preferred_language="es", contact_status="active", emergency_contact_name="Ravi Sharma", emergency_contact_phone="+1 555 010 6602"),
+        PatientProfile(user_id=patients[5].id, date_of_birth=date(1989, 5, 17), gender="male", phone="+1 555 010 7701", preferred_language="fr", contact_status="new", emergency_contact_name="Zainab Hussain", emergency_contact_phone="+1 555 010 7702"),
         PatientProfile(user_id=patients[6].id, date_of_birth=date(1971, 12, 5), gender="male", phone="+1 555 010 8801", preferred_language="en", contact_status="new", emergency_contact_name="Anna Carter", emergency_contact_phone="+1 555 010 8802"),
         PatientProfile(user_id=patients[7].id, date_of_birth=date(1995, 4, 25), gender="female", phone="+1 555 010 9901", preferred_language="en", contact_status="active", emergency_contact_name="Dmitri Petrova", emergency_contact_phone="+1 555 010 9902"),
     ]

@@ -87,26 +87,34 @@ def start_workflow(
     preferred_language = _get_preferred_language(patient_id)
 
     run = create_workflow_run(patient_id, english_text)
-    graph = get_graph()
-    graph.invoke(
-        {
-            "workflow_run_id": run.id,
-            "patient_id": patient_id,
-            "request_text": english_text,
-            "thread_id": run.thread_id,
-            "status": RUN_STATUS_IN_PROGRESS,
-            "failed_attempts": 0,
-            "needs_booking": False,
-            "needs_document": False,
-            "needs_reminder": False,
-            "missing_documents": [],
-            "messages": [HumanMessage(content=english_text)],
-            "tool_results": [],
-            "preferred_language": preferred_language,
-            **({"document_id": document_id} if document_id is not None else {}),
-        },
-        _config(run),
-    )
+    try:
+        graph = get_graph()
+        graph.invoke(
+            {
+                "workflow_run_id": run.id,
+                "patient_id": patient_id,
+                "request_text": english_text,
+                "thread_id": run.thread_id,
+                "status": RUN_STATUS_IN_PROGRESS,
+                "failed_attempts": 0,
+                "needs_booking": False,
+                "needs_document": False,
+                "needs_reminder": False,
+                "missing_documents": [],
+                "messages": [HumanMessage(content=english_text)],
+                "tool_results": [],
+                "preferred_language": preferred_language,
+                **({"document_id": document_id} if document_id is not None else {}),
+            },
+            _config(run),
+        )
+    except Exception as exc:
+        update_workflow_run(
+            run.id,
+            status="failed",
+            state_payload={"error": str(exc)},
+        )
+        return get_workflow_run(run.id)  # type: ignore[return-value]
 
     # Phase 7: translate outgoing final_response back to preferred language.
     refreshed = get_workflow_run(run.id)
@@ -153,7 +161,15 @@ def resume_workflow(
     if document_id is not None:
         updates["document_id"] = document_id
     graph.update_state(_config(run), updates, as_node=node)
-    graph.invoke(None, _config(run))
+    try:
+        graph.invoke(None, _config(run))
+    except Exception as exc:
+        update_workflow_run(
+            run.id,
+            status="failed",
+            state_payload={**(run.state or {}), "error": str(exc)},
+        )
+        return get_workflow_run(run.id)  # type: ignore[return-value]
 
     # Phase 7: translate outgoing final_response back to preferred language.
     refreshed = get_workflow_run(run.id)

@@ -90,13 +90,24 @@ def _today() -> str:
 SAFETY_ENTRY_PROMPT = """You are the Safety & Escalation agent of AgentCare, an AI system for \
 patient administration and care coordination. Today's date is {today}.
 
-Your job is to screen the patient's request BEFORE any other agent acts on it. Escalate to a \
-human reviewer if the request contains ANY of:
-- medical diagnosis, treatment advice, prescriptions, dosages, or medication instructions,
-- emergency or urgent symptoms (chest pain, difficulty breathing, severe bleeding, fainting, ...),
-- self-harm or harm to others,
-- anything outside the system's administrative scope (appointment booking, scheduling, \
-documents, reminders).
+Your job is to screen the patient's request BEFORE any other agent acts on it. You must distinguish \
+between genuine emergencies and routine administrative requests that mention symptoms.
+
+ESCALATE (call create_escalation) if the request contains:
+- Requests for medical diagnosis, treatment advice, prescriptions, dosages, or medication instructions,
+- Genuine emergency or life-threatening symptoms: chest pain, difficulty breathing, severe bleeding, \
+fainting, stroke symptoms (sudden weakness, slurred speech), severe allergic reactions, loss of \
+consciousness, severe abdominal pain, high fever with confusion,
+- Self-harm or harm to others,
+- Explicit requests for the system to diagnose, treat, or prescribe (e.g. "what is wrong with me", \
+"what medicine should I take").
+
+DO NOT ESCALATE — route normally to Department Routing if:
+- The patient mentions a mild or routine symptom (headache, skin rash, mild cough, back pain, \
+earache, mild fever, etc.) purely as the reason for wanting an appointment or booking. This is \
+administrative routing information, not a diagnosis request.
+- The patient is asking to see a doctor, book an appointment, or get routed to a department, \
+and mentions a symptom only to explain what the visit is about.
 
 Rules:
 1. If the request is safe, routine administrative content, call complete_safety_screen(safe=true, \
@@ -104,7 +115,8 @@ reason="...").
 2. If it must be escalated, call create_escalation with an appropriate severity (critical for \
 emergency or safety-of-life, high for potential harm, medium for clinical or sensitive content) \
 and a clear reason, then call complete_safety_screen(safe=false, reason="...").
-3. Never answer the request yourself and never give clinical advice."""
+3. Never answer the request yourself and never give clinical advice.
+4. When in doubt about severity, escalate — patient safety comes first."""
 
 SAFETY_GATE_PROMPT = """You are the Safety & Escalation gate of AgentCare. Today's date is {today}.
 
@@ -165,11 +177,13 @@ FOLLOWUP_PROMPT = """You are the Follow-up agent of AgentCare. Today's date is {
 Patient {patient_id}{appointment_clause}.
 
 Rules:
-1. If a reminder or follow-up was requested (needs_reminder=true): call create_reminder for the \
-patient, linked to the appointment, scheduled ONE DAY BEFORE the appointment — the appointment \
-is at {appointment_at}, so the reminder must be scheduled on the previous day (not at the \
-appointment time). Then call complete_followup(reminder_id=<id>, message="...").
-2. If no reminder is needed, call complete_followup(message="No reminder needed")."""
+1. Call create_reminder for the patient, linked to the appointment. The tool will \
+auto-generate the correct message from real appointment data — do NOT pass a message \
+parameter. The reminder must be scheduled ONE DAY BEFORE the appointment \
+(the appointment is at {appointment_at}). Then call \
+complete_followup(reminder_id=<id>, message="Reminder created.").
+2. If the appointment is already in the past or no valid date is provided, call \
+complete_followup(message="Reminder could not be created — invalid date")."""
 
 INSURANCE_PROMPT = """You are the Insurance Eligibility agent of AgentCare. Today's date is {today}. \
 Patient {patient_id} has a booked appointment #{appointment_id} in {department_name}.
@@ -292,10 +306,40 @@ class BaseAgentNode:
         """State deltas applied when the node's completion tool is called."""
         return {}
 
+    def _filter_messages(self, messages: list[BaseMessage]) -> list[BaseMessage]:
+        """Strip AIMessages whose tool_calls reference tools outside this node's set.
+
+        Groq validates that every tool_call in the conversation history belongs to
+        the current request's tools list.  When the graph resumes after a checkpoint,
+        the history may contain tool_calls from earlier nodes (safety, routing, etc.)
+        whose tools are not bound on this node, causing a 400 error.
+        """
+        allowed = {t.name for t in self.tool_specs}
+        filtered: list[BaseMessage] = []
+        skip_tool_call_ids: set[str] = set()
+
+        for msg in messages:
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                bad_calls = [tc for tc in msg.tool_calls if tc["name"] not in allowed]
+                if bad_calls:
+                    skip_tool_call_ids.update(tc["id"] for tc in bad_calls)
+                    good_calls = [tc for tc in msg.tool_calls if tc["name"] in allowed]
+                    if good_calls:
+                        filtered.append(AIMessage(
+                            content=msg.content,
+                            tool_calls=good_calls,
+                            id=msg.id,
+                        ))
+                    continue
+            if isinstance(msg, ToolMessage) and msg.tool_call_id in skip_tool_call_ids:
+                continue
+            filtered.append(msg)
+        return filtered
+
     def __call__(self, state: WorkflowState) -> dict:
         llm = self.llm_factory().bind_tools(tool_mod.tool_schema_dicts(self.tool_specs))
         messages: list[BaseMessage] = [SystemMessage(content=self._system_prompt(state))]
-        messages.extend(state.get("messages", []))
+        messages.extend(self._filter_messages(state.get("messages", [])))
 
         response = llm.invoke(messages)
         new_messages: list[BaseMessage] = [response]

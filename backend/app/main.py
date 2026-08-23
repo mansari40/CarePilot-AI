@@ -1,9 +1,11 @@
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.audit import router as audit_router
 from app.api.routes.analytics import router as analytics_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.escalations import router as escalations_router
+from app.api.routes.patient_data import router as patient_data_router
 from app.api.routes.patients import router as patients_router
 from app.api.routes.staff import router as staff_router
 from app.api.workflows import router as workflows_router
@@ -36,6 +38,8 @@ app.include_router(workflows_router)
 app.include_router(staff_router)
 app.include_router(escalations_router)
 app.include_router(analytics_router)
+app.include_router(audit_router)
+app.include_router(patient_data_router)
 
 
 @app.get("/health")

@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_current_user, get_db
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.models import PatientProfile, User
 from app.schemas.user import (
@@ -19,6 +19,13 @@ from app.schemas.user import (
 from app.tools.patients import find_user_by_email
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+@router.get("/me", response_model=UserRead)
+def read_current_user(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> UserRead:
+    return UserRead.model_validate(current_user)
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)

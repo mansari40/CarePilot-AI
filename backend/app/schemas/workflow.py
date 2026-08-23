@@ -57,5 +57,6 @@ class ReminderRead(BaseModel):
     channel: str
     message: str | None
     status: str
+    appointment_date: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -1,12 +1,29 @@
 """Reminder tool — creates appointment reminders and follow-up tasks."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Appointment, PatientProfile, Reminder
+from app.db.models import Appointment, Department, Doctor, PatientProfile, Reminder
 from app.tools.audit import log_audit
 from app.tools.errors import AppointmentNotFoundError, PatientNotFoundError, ReminderValidationError
+
+
+def _build_reminder_message(appointment: Appointment, session: Session) -> str:
+    """Build a reminder message from real appointment data (never hallucinated by LLM)."""
+    appt_time = appointment.scheduled_for
+    if appt_time is None:
+        return "Reminder: you have an upcoming appointment."
+
+    dept = session.get(Department, appointment.department_id) if appointment.department_id else None
+    dept_name = dept.name if dept else "your department"
+
+    doctor = session.get(Doctor, appointment.doctor_id) if appointment.doctor_id else None
+    doctor_part = f" with Dr. {doctor.name}" if doctor else ""
+
+    time_str = appt_time.strftime("%I:%M %p").lstrip("0")
+    date_str = appt_time.strftime("%B %d, %Y")
+    return f"Reminder: upcoming appointment on {date_str} at {time_str}{doctor_part} ({dept_name})."
 
 
 def create_reminder(
@@ -41,6 +58,12 @@ def create_reminder(
                 scheduled_for = datetime.now()
         if reminder_type not in ("appointment", "follow_up"):
             raise ReminderValidationError(f"Unknown reminder type: {reminder_type}")
+
+        # Auto-generate message from real appointment data if LLM didn't provide one.
+        if not message and appointment_id is not None:
+            appt = session.get(Appointment, appointment_id)
+            if appt is not None:
+                message = _build_reminder_message(appt, session)
 
         reminder = Reminder(
             appointment_id=appointment_id,

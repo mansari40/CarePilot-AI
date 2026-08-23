@@ -15,6 +15,8 @@ from app.core.persistence import get_workflow_run
 from app.db.models import PatientProfile, User, WorkflowRun
 from app.schemas.workflow import WorkflowResume, WorkflowRunCreate, WorkflowRunRead
 
+from pydantic import BaseModel
+
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 
@@ -42,6 +44,27 @@ def _check_run_access(db: Session, user: User, run: WorkflowRun) -> None:
         )
         if profile is None or run.patient_id != profile.id:
             raise HTTPException(status_code=403, detail="Access denied")
+
+
+@router.get("/", response_model=list[WorkflowRunRead])
+def list_runs(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = 50,
+) -> list[WorkflowRunRead]:
+    """List workflow runs. Patients see only their own; staff see all."""
+    q = db.query(WorkflowRun)
+    if current_user.role == "patient":
+        profile = (
+            db.query(PatientProfile)
+            .filter(PatientProfile.user_id == current_user.id)
+            .first()
+        )
+        if profile is None:
+            return []
+        q = q.filter(WorkflowRun.patient_id == profile.id, WorkflowRun.hidden_from_patient.is_(False))
+    runs = q.order_by(WorkflowRun.created_at.desc()).limit(limit).all()
+    return [WorkflowRunRead.model_validate(r) for r in runs]
 
 
 @router.post("/run", response_model=WorkflowRunRead, status_code=status.HTTP_201_CREATED)
@@ -89,4 +112,34 @@ def get_run(
     if run is None:
         raise HTTPException(status_code=404, detail=f"No workflow run with id {run_id}")
     _check_run_access(db, current_user, run)
+    return WorkflowRunRead.model_validate(run)
+
+
+HIDEABLE_STATUSES = {"completed", "escalated", "failed", "cancelled"}
+
+
+class HideRunPayload(BaseModel):
+    hidden: bool = True
+
+
+@router.patch("/{run_id}/hide", response_model=WorkflowRunRead)
+def hide_run(
+    run_id: int,
+    payload: HideRunPayload,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> WorkflowRunRead:
+    """Soft-hide a workflow run from the patient's view. Only terminal states allowed."""
+    run = db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"No workflow run with id {run_id}")
+    _check_run_access(db, current_user, run)
+    if payload.hidden and run.status not in HIDEABLE_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot hide a request with status '{run.status}'. Only completed, escalated, failed, or cancelled requests can be removed from history.",
+        )
+    run.hidden_from_patient = payload.hidden
+    db.commit()
+    db.refresh(run)
     return WorkflowRunRead.model_validate(run)
