@@ -1,1 +1,195 @@
 @import "tailwindcss";
+
+/* ── CarePilot Design Tokens ─────────────────────────────────────── */
+
+@theme {
+  /* Patient Portal palette — calm, trustworthy */
+  --color-patient-primary: #2563EB;
+  --color-patient-primary-dark: #1D4ED8;
+  --color-patient-accent: #EA580C;
+
+  /* Staff Console palette — authoritative, distinct */
+  --color-staff-primary: #4F46E5;
+  --color-staff-primary-dark: #4338CA;
+
+  /* Shared semantic tokens */
+  --color-surface: #F8FAFC;
+  --color-card: #FFFFFF;
+  --color-card-hover: #F1F5F9;
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94A3B8;
+  --color-border: #E2E8F0;
+  --color-border-strong: #CBD5E1;
+  --color-focus-ring: #2563EB;
+
+  --color-success: #059669;
+  --color-success-light: #ECFDF5;
+  --color-warning: #D97706;
+  --color-warning-light: #FFFBEB;
+  --color-danger: #DC2626;
+  --color-danger-light: #FEF2F2;
+  --color-info: #0284C7;
+  --color-info-light: #F0F9FF;
+
+  /* Font families */
+  --font-heading: "Figtree", "Noto Sans", system-ui, sans-serif;
+  --font-body: "Noto Sans", "Figtree", system-ui, sans-serif;
+  --font-heading-rtl: "Noto Naskh Arabic", "Noto Sans", system-ui, sans-serif;
+  --font-body-rtl: "Noto Naskh Arabic", "Noto Sans", system-ui, sans-serif;
+
+  /* Spacing scale (4px base) */
+  --spacing-18: 4.5rem;
+  --spacing-88: 22rem;
+  --spacing-128: 32rem;
+}
+
+/* ── Base resets ─────────────────────────────────────────────────── */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+}
+
+/* ── Focus ring utility ──────────────────────────────────────────── */
+
+.focus-ring {
+  @apply outline-none ring-2 ring-patient-primary/20 ring-offset-2;
+}
+
+/* ── Skeleton loading animation ──────────────────────────────────── */
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.375rem;
+}
+
+/* ── Scrollbar styling ───────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* ── RTL (Right-to-Left) support ─────────────────────────────────── */
+
+[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+
+[dir="rtl"] .ml-auto,
+[dir="rtl"] [class*="ml-"] {
+  margin-left: unset;
+}
+
+[dir="rtl"] .mr-auto,
+[dir="rtl"] [class*="mr-"] {
+  margin-right: unset;
+}
+
+[dir="rtl"] .pl-,
+[dir="rtl"] [class*="pl-"] {
+  padding-left: unset;
+}
+
+[dir="rtl"] .pr-,
+[dir="rtl"] [class*="pr-"] {
+  padding-right: unset;
+}
+
+/* Flip flex direction for RTL nav links border */
+[dir="rtl"] [class*="border-l-2"] {
+  border-left-width: 0 !important;
+  border-right-width: 2px !important;
+}
+
+/* Ensure proper text alignment in RTL */
+[dir="rtl"] .text-left {
+  text-align: right !important;
+}
+
+[dir="rtl"] .text-right {
+  text-align: left !important;
+}
+
+/* Flip margins and paddings used in the app */
+[dir="rtl"] .space-x-1 > :not([hidden]) ~ :not([hidden]),
+[dir="rtl"] .space-x-2 > :not([hidden]) ~ :not([hidden]),
+[dir="rtl"] .space-x-3 > :not([hidden]) ~ :not([hidden]),
+[dir="rtl"] .space-x-4 > :not([hidden]) ~ :not([hidden]),
+[dir="rtl"] .gap-1,
+[dir="rtl"] .gap-2,
+[dir="rtl"] .gap-3,
+[dir="rtl"] .gap-4 {
+  /* gaps are direction-agnostic in flex/grid, no flip needed */
+}
+
+/* Fix for table text alignment in RTL */
+[dir="rtl"] table th,
+[dir="rtl"] table td {
+  text-align: right;
+}
+
+/* Fix dropdown alignment in RTL */
+[dir="rtl"] .right-0 {
+  left: 0;
+  right: auto;
+}
+
+/* Ensure proper form element alignment */
+[dir="rtl"] input,
+[dir="rtl"] select,
+[dir="rtl"] textarea {
+  text-align: right;
+}
+
+/* Flip icon positioning in inputs */
+[dir="rtl"] [class*="left-3"] {
+  left: auto;
+  right: 0.75rem;
+}
+
+/* Use Noto Naskh Arabic font for RTL languages */
+[dir="rtl"] body {
+  font-family: var(--font-body-rtl);
+}
+
+[dir="rtl"] h1,
+[dir="rtl"] h2,
+[dir="rtl"] h3,
+[dir="rtl"] h4,
+[dir="rtl"] h5,
+[dir="rtl"] h6 {
+  font-family: var(--font-heading-rtl);
+}

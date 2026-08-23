@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import i18n from "../i18n";
 
 interface User {
   id: number;
@@ -11,6 +12,7 @@ interface User {
 interface AuthCtx {
   user: User | null;
   token: string | null;
+  loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (full_name: string, email: string, password: string, preferred_language: string) => Promise<void>;
   logout: () => void;
@@ -22,16 +24,34 @@ const AuthContext = createContext<AuthCtx | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("carepilot_token"));
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (token) fetchProfile(token);
+  const fetchProfile = useCallback(async (t: string) => {
+    try {
+      const res = await fetch("/api/auth/me", { headers: { Authorization: `Bearer ${t}` } });
+      if (res.ok) {
+        setUser(await res.json());
+      } else {
+        setToken(null);
+        localStorage.removeItem("carepilot_token");
+        setUser(null);
+      }
+    } catch {
+      setToken(null);
+      localStorage.removeItem("carepilot_token");
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  async function fetchProfile(t: string) {
-    const res = await fetch("/api/patients/me", { headers: { Authorization: `Bearer ${t}` } });
-    if (res.ok) setUser(await res.json());
-    else { setToken(null); localStorage.removeItem("carepilot_token"); }
-  }
+  useEffect(() => {
+    if (token) {
+      fetchProfile(token);
+    } else {
+      setLoading(false);
+    }
+  }, [token, fetchProfile]);
 
   async function login(email: string, password: string) {
     const res = await fetch("/api/auth/login", {
@@ -39,10 +59,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    if (!res.ok) throw new Error("Invalid credentials");
+    if (!res.ok) throw new Error(i18n.t("login.error_invalid"));
     const data = await res.json();
-    setToken(data.access_token);
     localStorage.setItem("carepilot_token", data.access_token);
+    setToken(data.access_token);
     await fetchProfile(data.access_token);
   }
 
@@ -54,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      throw new Error(d.detail || "Registration failed");
+      throw new Error(d.detail || i18n.t("register.error_failed"));
     }
     await login(email, password);
   }
@@ -71,12 +91,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Patch failed");
+    if (!res.ok) throw new Error(i18n.t("profile.error_patch"));
     setUser(await res.json());
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, patchProfile }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, patchProfile }}>
       {children}
     </AuthContext.Provider>
   );

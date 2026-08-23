@@ -6,6 +6,7 @@ import {
   LineChart, Line, CartesianGrid,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
+import { ChartBar } from "phosphor-react";
 
 const COLORS = ["#0d9488", "#06b6d4", "#8b5cf6", "#f59e0b", "#ef4444", "#64748b", "#10b981"];
 
@@ -54,9 +55,58 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [token]);
 
-  if (loading) return <p className="mt-16 text-center text-slate-500">{t("dashboard.loading")}</p>;
-  if (error === "forbidden") return <p className="mt-16 text-center text-red-600">{t("dashboard.access_denied")}</p>;
-  if (!data) return <p className="mt-16 text-center text-red-600">{t("dashboard.no_data")}</p>;
+  if (loading) return (
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="mb-6 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+          <ChartBar weight="fill" className="h-5 w-5 text-blue-600" />
+        </div>
+        <div>
+          <h1 className="font-heading text-xl font-bold text-slate-900">{t("dashboard.title")}</h1>
+          <p className="text-sm text-slate-500">{t("dashboard.analytics_overview")}</p>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="skeleton h-14 w-full rounded-xl" />
+        ))}
+      </div>
+    </div>
+  );
+
+  if (error === "forbidden") return (
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="mb-6 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+          <ChartBar weight="fill" className="h-5 w-5 text-blue-600" />
+        </div>
+        <div>
+          <h1 className="font-heading text-xl font-bold text-slate-900">{t("dashboard.title")}</h1>
+          <p className="text-sm text-slate-500">{t("dashboard.analytics_overview")}</p>
+        </div>
+      </div>
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white py-16 ring-1 ring-slate-900/5">
+        <p className="text-sm font-medium text-red-600">{t("dashboard.access_denied")}</p>
+      </div>
+    </div>
+  );
+
+  if (!data) return (
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="mb-6 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+          <ChartBar weight="fill" className="h-5 w-5 text-blue-600" />
+        </div>
+        <div>
+          <h1 className="font-heading text-xl font-bold text-slate-900">{t("dashboard.title")}</h1>
+          <p className="text-sm text-slate-500">{t("dashboard.analytics_overview")}</p>
+        </div>
+      </div>
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white py-16 ring-1 ring-slate-900/5">
+        <p className="text-sm font-medium text-red-600">{t("dashboard.no_data")}</p>
+      </div>
+    </div>
+  );
 
   const deptData = data.appointments_by_department.map((d) => ({ name: d.department, value: d.count }));
   const statusData = data.appointments_by_status.map((d) => ({ name: d.status, value: d.count }));
@@ -66,7 +116,7 @@ export default function DashboardPage() {
 
   function Card({ title, children }: { title: string; children: React.ReactNode }) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm ring-1 ring-slate-900/5">
         <h3 className="mb-3 text-sm font-semibold text-slate-700">{title}</h3>
         {children}
       </div>
@@ -79,18 +129,24 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="mb-6 text-xl font-bold text-slate-800">{t("dashboard.title")}</h1>
+      <div className="mb-6 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+          <ChartBar weight="fill" className="h-5 w-5 text-blue-600" />
+        </div>
+        <div>
+          <h1 className="font-heading text-xl font-bold text-slate-900">{t("dashboard.title")}</h1>
+          <p className="text-sm text-slate-500">{t("dashboard.analytics_overview")}</p>
+        </div>
+      </div>
 
-      {/* KPI row */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <KpiCard label={t("dashboard.total_appts")} value={data.document_completion.total_appointments} />
-        <KpiCard label={t("dashboard.with_docs")} value={data.document_completion.appointments_with_documents} />
-        <KpiCard label={t("dashboard.escalations")} value={data.escalation_stats.total} />
-        <KpiCard label={t("dashboard.avg_booking")} value={`${Math.round(data.avg_request_to_booking.average_seconds)}s`} sub={`${data.avg_request_to_booking.sample_count} ${t("dashboard.samples")}`} />
+        <KpiCard label={t("dashboard.total_appts")} value={data.document_completion.total_appointments} accent="border-l-blue-500" />
+        <KpiCard label={t("dashboard.with_docs")} value={data.document_completion.appointments_with_documents} accent="border-l-emerald-500" />
+        <KpiCard label={t("dashboard.escalations")} value={data.escalation_stats.total} accent="border-l-orange-500" />
+        <KpiCard label={t("dashboard.avg_booking")} value={`${Math.round(data.avg_request_to_booking.average_seconds)}s`} sub={`${data.avg_request_to_booking.sample_count} ${t("dashboard.samples")}`} accent="border-l-violet-500" />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Appointments by Department */}
         <Card title={t("dashboard.appt_by_dept")}>
           {deptData.length ? (
             <ResponsiveContainer width="100%" height={220}>
@@ -104,7 +160,6 @@ export default function DashboardPage() {
           ) : <Empty />}
         </Card>
 
-        {/* Appointments by Status */}
         <Card title={t("dashboard.appt_by_status")}>
           {statusData.length ? (
             <ResponsiveContainer width="100%" height={220}>
@@ -119,7 +174,6 @@ export default function DashboardPage() {
           ) : <Empty />}
         </Card>
 
-        {/* Insurance Eligibility */}
         <Card title={t("dashboard.insurance_outcomes")}>
           {insuranceData.length ? (
             <ResponsiveContainer width="100%" height={220}>
@@ -133,7 +187,6 @@ export default function DashboardPage() {
           ) : <Empty />}
         </Card>
 
-        {/* Escalation Severity */}
         <Card title={t("dashboard.escalations")}>
           {severityData.length ? (
             <ResponsiveContainer width="100%" height={220}>
@@ -148,7 +201,6 @@ export default function DashboardPage() {
           ) : <Empty />}
         </Card>
 
-        {/* Busiest Days */}
         <Card title={t("dashboard.busiest_days")}>
           {dayData.length ? (
             <ResponsiveContainer width="100%" height={220}>
@@ -163,7 +215,6 @@ export default function DashboardPage() {
           ) : <Empty />}
         </Card>
 
-        {/* Busiest Doctors */}
         <Card title={t("dashboard.busiest_doctors")}>
           {data.busiest_doctors.length ? (
             <ResponsiveContainer width="100%" height={220}>
@@ -178,26 +229,25 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Document completion footer */}
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm ring-1 ring-slate-900/5">
         <h3 className="mb-2 text-sm font-semibold text-slate-700">{t("dashboard.doc_completion")}</h3>
-        <div className="flex gap-8 text-sm text-slate-600">
+        <div className="flex flex-wrap gap-8 text-sm text-slate-600">
           <span>{t("dashboard.total_appts")}: <strong>{data.document_completion.total_appointments}</strong></span>
           <span>{t("dashboard.with_docs")}: <strong>{data.document_completion.appointments_with_documents}</strong></span>
           <span>{t("dashboard.rate")}: <strong>{data.document_completion.completion_rate_pct}%</strong></span>
-          <span>Duplicates: <strong>{data.document_completion.duplicate_documents}</strong> ({data.document_completion.duplicate_rate_pct}%)</span>
+          <span>{t("dashboard.duplicates")}: <strong>{data.document_completion.duplicate_documents}</strong> ({data.document_completion.duplicate_rate_pct}%)</span>
         </div>
       </div>
     </div>
   );
 }
 
-function KpiCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function KpiCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-      <p className="text-xs text-slate-500">{label}</p>
+    <div className={`rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm ring-1 ring-slate-900/5 border-l-4 ${accent || "border-l-slate-300"}`}>
+      <p className="text-xs font-medium text-slate-500">{label}</p>
       <p className="text-xl font-bold text-teal-700">{value}</p>
-      {sub && <p className="text-xs text-slate-400">{sub}</p>}
+      {sub && <p className="mt-0.5 text-xs text-slate-400">{sub}</p>}
     </div>
   );
 }
