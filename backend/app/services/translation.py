@@ -16,14 +16,13 @@ SUPPORTED_LANGUAGES = {
     "en": "English",
     "es": "Spanish",
     "fr": "French",
-    "ar": "Arabic",
-    "hi": "Hindi",
-    "ur": "Urdu",
+    "prs": "Dari",
+    "ps": "Pashto",
 }
 
 
 def detect_language(text: str) -> str:
-    """Detect the language of *text*. Returns an ISO 639-1 code (e.g. 'es', 'ar').
+    """Detect the language of *text*. Returns an ISO 639-1 or 639-3 code (e.g. 'es', 'prs', 'ps').
 
     Falls back to ``'en'`` when the model cannot determine the language, when
     the text is already English, or when the LLM is unavailable.
@@ -33,17 +32,21 @@ def detect_language(text: str) -> str:
     except RuntimeError:
         return "en"
     prompt = (
-        "You are a language detection utility. Reply with ONLY the two-letter "
-        "ISO 639-1 language code for the following text. Do not add any other "
+        "You are a language detection utility. Reply with ONLY the ISO 639-1 "
+        "or ISO 639-3 language code for the following text. Use 'prs' for Dari "
+        "(Afghan Persian) and 'ps' for Pashto. Do not add any other "
         "text, explanation, or punctuation. If the text is empty or you are "
         "uncertain, reply with 'en'.\n\n"
         f"Text: {text}"
     )
     try:
         response = llm.invoke([{"role": "user", "content": prompt}])
-        code = response.content.strip().lower()[:2]
+        code = response.content.strip().lower()
+        # Check full code first (for 3-letter codes like 'prs'), then 2-letter
         if code in SUPPORTED_LANGUAGES:
             return code
+        if code[:2] in SUPPORTED_LANGUAGES:
+            return code[:2]
     except Exception:  # noqa: BLE001
         pass
     return "en"
