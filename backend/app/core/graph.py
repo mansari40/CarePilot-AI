@@ -35,6 +35,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from app.config import get_settings
+from app.core.llm import groq_client
 from app.core.nodes import (
     NODE_BOOK_APPOINTMENT,
     NODE_CLARIFY,
@@ -251,7 +252,14 @@ def build_graph(overrides: dict | None = None) -> StateGraph:
     ):
         builder.add_node(
             gate_name,
-            _node(gate_name, SafetyAgentNode(tool_specs=SAFETY_TOOLS, gate=True)),
+            _node(
+                gate_name,
+                SafetyAgentNode(
+                    tool_specs=SAFETY_TOOLS,
+                    gate=True,
+                    llm_factory=lambda: groq_client.get_llm(fast=True),
+                ),
+            ),
         )
 
     for name, terminal in terminals.items():

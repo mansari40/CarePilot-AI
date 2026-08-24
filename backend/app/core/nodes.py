@@ -22,6 +22,8 @@ accumulated state after every single step (what makes restart-and-resume work).
 """
 
 import json
+import logging
+import time
 from datetime import datetime
 
 from langchain_core.messages import (
@@ -48,6 +50,8 @@ from app.core.state import (
     WorkflowState,
 )
 from app.db.session import SessionLocal
+
+logger = logging.getLogger(__name__)
 
 MAX_FAILED_ATTEMPTS = 3
 MAX_TURNS = 12
@@ -161,17 +165,22 @@ after booking."""
 DOCUMENT_PROMPT = """You are the Medical Document Coordination agent of AgentCare. Today's date \
 is {today}. Patient {patient_id}{appointment_clause}.
 
-Rules:
-1. If the routing decision requires documents: call get_patient_documents(patient_id) to see what \
-is on file, classify_document(filename, content) to verify the type of the relevant document, and \
-attach_document_to_appointment(document_id, appointment_id) to link the verified document to the \
-appointment when one exists.
-2. If a required document type is missing, call complete_document_check(missing_documents=["ecg"], \
-message="...").
-3. If everything required is present and attached, call \
-complete_document_check(document_id=<id>, message="...").
-4. If no documents are required for this request, call \
-complete_document_check(message="No documents required")."""
+IMPORTANT: The routing step has already determined whether documents are required. The \
+needs_document flag in the state is the AUTHORITATIVE signal. \
+If needs_document is FALSE, documents are NOT required for this request — call \
+complete_document_check(message="No documents required") IMMEDIATELY without checking \
+for or inventing any document requirements.
+
+If needs_document is TRUE:
+1. Call get_patient_documents(patient_id) to see what is on file.
+2. For each document the routing step explicitly requires, verify it exists and is the \
+correct type using classify_document, then attach it with \
+attach_document_to_appointment.
+3. If a document the routing step requires is missing, call \
+complete_document_check(missing_documents=["<type>"], message="...") where <type> is \
+the actual missing document type (e.g. "ecg", "mri", "xray").
+4. If everything required is present and attached, call \
+complete_document_check(document_id=<id>, message="...")."""
 
 FOLLOWUP_PROMPT = """You are the Follow-up agent of AgentCare. Today's date is {today}. \
 Patient {patient_id}{appointment_clause}.
@@ -188,13 +197,19 @@ complete_followup(message="Reminder could not be created — invalid date")."""
 INSURANCE_PROMPT = """You are the Insurance Eligibility agent of AgentCare. Today's date is {today}. \
 Patient {patient_id} has a booked appointment #{appointment_id} in {department_name}.
 
+AVAILABLE TOOLS (use these EXACT names — do NOT invent or guess other tool names):
+- lookup_insurance
+- check_eligibility
+- complete_insurance_check
+
 Rules:
 1. Call lookup_insurance(patient_id={patient_id}) to see the patient's insurance status.
 2. If a policy exists, call check_eligibility(appointment_id={appointment_id}) to run the \
 eligibility pre-check against the real policy and visit type.
 3. Call complete_insurance_check with the eligibility_status (covered, needs_preauthorization, \
 not_covered, or no_policy), the insurance_check_id if a check was created, and a one-line message.
-4. Never guarantee payment or coverage. The result is an estimate only."""
+4. Never guarantee payment or coverage. The result is an estimate only.
+5. IMPORTANT: Only call the exact tool names listed above. Any other tool name will cause an error."""
 
 BILLING_PROMPT = """You are the Billing agent of AgentCare. Today's date is {today}. \
 Patient {patient_id} has a booked appointment #{appointment_id} in {department_name}.
@@ -337,11 +352,60 @@ class BaseAgentNode:
         return filtered
 
     def __call__(self, state: WorkflowState) -> dict:
+        t_start = time.monotonic()
         llm = self.llm_factory().bind_tools(tool_mod.tool_schema_dicts(self.tool_specs))
         messages: list[BaseMessage] = [SystemMessage(content=self._system_prompt(state))]
         messages.extend(self._filter_messages(state.get("messages", [])))
 
-        response = llm.invoke(messages)
+        t_llm = time.monotonic()
+        try:
+            response = llm.invoke(messages)
+        except Exception as exc:
+            logger.info("node_llm_error node=%s elapsed=%.1fs error=%s", self.node_name, time.monotonic() - t_llm, exc)
+            error_msg = str(exc)
+            turns = state.get("turns", 0) + 1
+            previous_failures = state.get("failed_attempts", 0)
+            failed_attempts = previous_failures + 1
+
+            if failed_attempts >= MAX_FAILED_ATTEMPTS:
+                status = RUN_STATUS_FAILED
+                summary = (
+                    f"Failed: {failed_attempts} consecutive errors were not recoverable. "
+                    "This request needs human review."
+                )
+            else:
+                status = RUN_STATUS_IN_PROGRESS
+                summary = (
+                    f"Retrying after an LLM error: {error_msg[:150]}."
+                )
+
+            self._persist_step(
+                state,
+                status=status,
+                current_step=self.node_name,
+                summary=summary,
+            )
+
+            logger.info("node_done node=%s elapsed=%.1fs status=%s", self.node_name, time.monotonic() - t_start, status)
+            return {
+                "messages": [
+                    HumanMessage(
+                        content=(
+                            f"Error: {error_msg}. "
+                            f"Available tools: {', '.join(t.name for t in self.tool_specs)}. "
+                            "Please use ONLY the exact tool names listed above."
+                        )
+                    )
+                ],
+                "tool_results": [],
+                "failed_attempts": failed_attempts,
+                "turns": turns,
+                "status": status,
+                "status_message": summary,
+            }
+
+        llm_elapsed = time.monotonic() - t_llm
+        logger.info("node_llm_done node=%s elapsed=%.1fs", self.node_name, llm_elapsed)
         new_messages: list[BaseMessage] = [response]
         executed: list[dict] = []
         ran_side_effect = False
@@ -482,6 +546,7 @@ class BaseAgentNode:
         if executed:
             deltas["current_step"] = executed[-1]["name"]
         deltas.update(completion_deltas)
+        logger.info("node_done node=%s elapsed=%.1fs status=%s turns=%d", self.node_name, time.monotonic() - t_start, status, turns)
         return deltas
 
     @staticmethod
@@ -654,9 +719,51 @@ class DocumentAgentNode(BaseAgentNode):
             if appointment
             else ". No appointment exists yet; verify documents on file only"
         )
+        needs_doc = state.get("needs_document")
         return DOCUMENT_PROMPT.format(
-            today=_today(), patient_id=state.get("patient_id", "?"), appointment_clause=clause
+            today=_today(),
+            patient_id=state.get("patient_id", "?"),
+            appointment_clause=clause,
+        ).replace(
+            "IMPORTANT: The routing step",
+            f"needs_document is currently: {needs_doc}.\n\nIMPORTANT: The routing step",
         )
+
+    def __call__(self, state: WorkflowState) -> dict:
+        if not state.get("needs_document"):
+            t_start = time.monotonic()
+            logger.info("node_done node=%s elapsed=0.0s status=in_progress (skipped: needs_document=false)", self.node_name)
+            return {
+                "messages": [
+                    AIMessage(content="", tool_calls=[
+                        {
+                            "name": self.completion_tool,
+                            "args": {"message": "No documents required for this request."},
+                            "id": f"auto_{self.node_name}_skip",
+                            "type": "tool_call",
+                        }
+                    ]),
+                    ToolMessage(
+                        content=f"Step recorded: {{\"message\": \"No documents required for this request.\"}}",
+                        tool_call_id=f"auto_{self.node_name}_skip",
+                    ),
+                ],
+                "tool_results": [
+                    {
+                        "name": self.completion_tool,
+                        "args": {"message": "No documents required for this request."},
+                        "ok": True,
+                        "result": {"message": "No documents required for this request."},
+                    }
+                ],
+                "node_done": self.node_name,
+                "missing_documents": [],
+                "failed_attempts": 0,
+                "turns": state.get("turns", 0) + 1,
+                "status": RUN_STATUS_IN_PROGRESS,
+                "status_message": "No documents required for this request.",
+            }
+        return super().__call__(state)
 
     def _on_tool_result(self, result: dict) -> dict:
         if not result.get("ok"):

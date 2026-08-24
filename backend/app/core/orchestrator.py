@@ -24,6 +24,9 @@ graph.  Outgoing patient-facing text (final_response) is translated back into
 the patient's preferred_language after the graph completes.
 """
 
+import logging
+import time
+
 from langchain_core.messages import HumanMessage
 
 from app.core.graph import get_graph
@@ -40,6 +43,8 @@ from app.services.translation import (
     translate_from_english,
     translate_to_english,
 )
+
+logger = logging.getLogger(__name__)
 
 _NODE_BOOK_APPOINTMENT = "book_appointment"
 _NODE_DOCUMENT_INGEST = "document_ingest"
@@ -81,12 +86,22 @@ def start_workflow(
     patient_id: int, request_text: str, document_id: int | None = None
 ) -> WorkflowRun:
     """Create a WorkflowRun row and run the pipeline from the safety screen."""
+    t0 = time.monotonic()
+    logger.info("workflow_start patient=%d text_len=%d", patient_id, len(request_text))
+
     # Phase 7: detect language and translate incoming request to English.
+    t_lang = time.monotonic()
     source_lang = detect_language(request_text)
     english_text = translate_to_english(request_text, source_lang)
     preferred_language = _get_preferred_language(patient_id)
+    logger.info(
+        "workflow_lang_done lang=%s elapsed=%.1fs",
+        source_lang,
+        time.monotonic() - t_lang,
+    )
 
     run = create_workflow_run(patient_id, english_text)
+    t_graph = time.monotonic()
     try:
         graph = get_graph()
         graph.invoke(
@@ -109,12 +124,14 @@ def start_workflow(
             _config(run),
         )
     except Exception as exc:
+        logger.error("workflow_graph_error elapsed=%.1fs error=%s", time.monotonic() - t_graph, exc)
         update_workflow_run(
             run.id,
             status="failed",
             state_payload={"error": str(exc)},
         )
         return get_workflow_run(run.id)  # type: ignore[return-value]
+    logger.info("workflow_graph_done elapsed=%.1fs", time.monotonic() - t_graph)
 
     # Phase 7: translate outgoing final_response back to preferred language.
     refreshed = get_workflow_run(run.id)
@@ -131,6 +148,7 @@ def start_workflow(
                 },
             )
             refreshed = get_workflow_run(run.id)
+    logger.info("workflow_done total_elapsed=%.1fs", time.monotonic() - t0)
     return refreshed  # type: ignore[return-value]
 
 

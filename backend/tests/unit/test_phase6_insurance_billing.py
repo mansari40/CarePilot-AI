@@ -223,6 +223,19 @@ def test_tool_scoping_insurance_node_only_sees_insurance_tools(db):
     assert "generate_billing_explanation" not in expected_names
 
 
+def test_insurance_node_tools_exclude_hallucinated_names():
+    """Regression: the LLM must not hallucinate 'run_insurance_eligibility_check'.
+
+    The Groq API rejects tool calls to names not in request.tools, causing a
+    400 error that marks the run as failed.  Verify the exact tool names.
+    """
+    names = {t.name for t in INSURANCE_TOOLS}
+    assert "check_eligibility" in names
+    assert "run_insurance_eligibility_check" not in names
+    assert "run_eligibility_check" not in names
+    assert "eligibility_check" not in names
+
+
 def test_tool_scoping_billing_node_only_sees_billing_tools(db):
     expected_names = {t.name for t in BILLING_TOOLS}
     assert "lookup_fee_items" in expected_names

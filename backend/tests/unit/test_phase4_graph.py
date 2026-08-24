@@ -36,6 +36,9 @@ class FakeChatModel:
         if not self.script:
             raise AssertionError("FakeChatModel ran out of scripted responses")
         msg = self.script.pop(0)
+        if isinstance(msg, type) and issubclass(msg, Exception):
+            raise msg("Tool call validation failed: attempted to call tool "
+                      "'run_insurance_eligibility_check' which was not in request.tools")
         if self._appointment_id is not None:
             msg = _patch_appointment_id(msg, self._appointment_id)
         return msg
@@ -847,3 +850,242 @@ def test_create_reminder_auto_generates_message_when_omitted(db):
     assert "2:00 PM" in reminder.message
     assert "October 15, 2026" in reminder.message
     assert "Neurology" in reminder.message
+
+
+# ---------------------------------------------------------------------------
+# LLM invocation error handling (tool validation failures)
+# ---------------------------------------------------------------------------
+
+
+def test_llm_tool_validation_error_retries_then_succeeds(db, fake_llm):
+    """When the LLM raises a tool-validation error (e.g. hallucinated tool name),
+    the node catches it, feeds the error back, and retries until success."""
+    patient = make_patient(db)
+    dept = make_department(db, name="Cardiology")
+    doctor = make_doctor(db, dept.id)
+    slot = make_slot(db, doctor.id)
+
+    class ToolValidationError(Exception):
+        pass
+
+    fake_llm.llm = FakeChatModel(
+        [
+            safe_screen(),
+            ai_with_tool("find_department", {"query": "Cardiology"}),
+            ai_with_tool("complete_routing", _routing(patient, dept)),
+            ai_with_tool("list_available_slots", _slot_window(slot, dept)),
+            ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+            # Insurance node: first call raises tool validation error (simulates Groq 400)
+            ToolValidationError,
+            # Retry: insurance node succeeds with correct tool
+            ai_with_tool(
+                "complete_insurance_check",
+                {"insurance_check_id": None, "eligibility_status": "covered", "message": "Insurance: covered"},
+            ),
+            ai_with_tool(
+                "complete_billing",
+                {"billing_explanation_id": None, "estimated_cost": "150.00", "message": "Billing done"},
+            ),
+            safe_screen("All safe."),
+        ]
+    )
+
+    run = start_workflow(patient.id, "Book me a cardiology appointment.")
+
+    assert run.status == "awaiting_confirmation"
+    assert run.current_step == "wait_confirm"
+    appointment = db.query(Appointment).one()
+    assert appointment.slot_id == slot.id
+
+
+def test_llm_tool_validation_error_fails_after_max_attempts(db, fake_llm):
+    """After MAX_FAILED_ATTEMPTS consecutive LLM errors, the run is marked failed."""
+    patient = make_patient(db)
+    dept = make_department(db, name="Cardiology")
+    doctor = make_doctor(db, dept.id)
+    slot = make_slot(db, doctor.id)
+
+    class ToolValidationError(Exception):
+        pass
+
+    fake_llm.llm = FakeChatModel(
+        [
+            safe_screen(),
+            ai_with_tool("find_department", {"query": "Cardiology"}),
+            ai_with_tool("complete_routing", _routing(patient, dept)),
+            ai_with_tool("list_available_slots", _slot_window(slot, dept)),
+            ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+            # Insurance node: 3 consecutive LLM errors
+            ToolValidationError,
+            ToolValidationError,
+            ToolValidationError,
+        ]
+    )
+
+    run = start_workflow(patient.id, "Book me a cardiology appointment.")
+
+    assert run.status == "failed"
+    assert run.summary and "human review" in run.summary
+    assert db.query(Appointment).count() == 1
+
+
+def test_retry_after_llm_error_does_not_duplicate_appointments(db, fake_llm):
+    """When the insurance node fails then retries, no duplicate appointments are created."""
+    patient = make_patient(db)
+    dept = make_department(db, name="Cardiology")
+    doctor = make_doctor(db, dept.id)
+    slot = make_slot(db, doctor.id)
+
+    class ToolValidationError(Exception):
+        pass
+
+    fake_llm.llm = FakeChatModel(
+        [
+            safe_screen(),
+            ai_with_tool("find_department", {"query": "Cardiology"}),
+            ai_with_tool("complete_routing", _routing(patient, dept)),
+            ai_with_tool("list_available_slots", _slot_window(slot, dept)),
+            ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+            # Insurance node: first call fails, retry succeeds
+            ToolValidationError,
+            ai_with_tool(
+                "complete_insurance_check",
+                {"insurance_check_id": None, "eligibility_status": "covered", "message": "Insurance: covered"},
+            ),
+            ai_with_tool(
+                "complete_billing",
+                {"billing_explanation_id": None, "estimated_cost": "150.00", "message": "Billing done"},
+            ),
+            safe_screen("All safe."),
+        ]
+    )
+
+    run = start_workflow(patient.id, "Book me a cardiology appointment.")
+
+    assert run.status == "awaiting_confirmation"
+    assert db.query(Appointment).count() == 1
+    appointment = db.query(Appointment).one()
+    assert appointment.slot_id == slot.id
+
+
+def test_cardiology_appointment_no_document_request_skips_document(db, fake_llm):
+    """Regression: cardiology appointment without explicit document mention must NOT
+    enter awaiting_document or request ECG.
+
+    The user said: 'I need an appointment with cardiology department next week'.
+    This should flow: safety → routing → book → insurance → billing → safety_gate → wait_confirm.
+    On resume it should immediately complete the document step with 'No documents required'.
+    """
+    patient = make_patient(db)
+    dept = make_department(db, name="Cardiology")
+    doctor = make_doctor(db, dept.id)
+    slot = make_slot(db, doctor.id)
+
+    fake_llm.llm = FakeChatModel(
+        [
+            safe_screen(),
+            ai_with_tool("find_department", {"query": "Cardiology"}),
+            ai_with_tool("complete_routing", _routing(patient, dept)),
+            ai_with_tool("list_available_slots", _slot_window(slot, dept)),
+            ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+            *insurance_and_billing_responses(),
+            safe_screen("Booking is safe."),
+        ]
+    )
+
+    run = start_workflow(patient.id, "I need an appointment with cardiology department next week")
+
+    assert run.status == "awaiting_confirmation"
+    assert run.current_step == "wait_confirm"
+    assert db.query(Appointment).count() == 1
+
+    _fresh_graph_after_restart()
+
+    fake_llm.llm = FakeChatModel(
+        [
+            ai_with_tool("create_reminder", _reminder_args(patient, db.query(Appointment).one())),
+            ai_with_tool("complete_followup", {"message": "Reminder scheduled"}),
+            safe_screen("Final answer is safe."),
+        ]
+    )
+
+    resumed = resume_workflow(run.id, "Confirmed — please continue.")
+
+    assert resumed.status == "completed"
+    assert resumed.summary == "Request fully handled."
+    assert db.query(Appointment).count() == 1
+    appointment = db.query(Appointment).one()
+    assert appointment.slot_id == slot.id
+
+    checkpoint = graph_mod.get_graph().get_state(
+        {"configurable": {"thread_id": resumed.thread_id}}
+    )
+    all_messages = checkpoint.values.get("messages", [])
+    tool_messages = [m for m in all_messages if isinstance(m, ToolMessage)]
+
+    state_vals = checkpoint.values
+    assert state_vals.get("missing_documents") == [], (
+        "missing_documents should be empty when user did not mention documents"
+    )
+    assert not any("ecg" in m.content.lower() for m in tool_messages), (
+        "ECG should not be requested when the user did not mention documents"
+    )
+
+
+def test_explicit_document_request_still_pauses_for_document(db, fake_llm):
+    """Genuinely document-required workflows should still pause at awaiting_document.
+
+    The user said: 'I need a cardiology appointment next week. My ECG report is attached.'
+    This explicitly mentions an ECG, so needs_document=true and the document step should run.
+    """
+    patient = make_patient(db)
+    dept = make_department(db, name="Cardiology")
+    doctor = make_doctor(db, dept.id)
+    slot = make_slot(db, doctor.id)
+    doc = make_document(db, patient)
+
+    fake_llm.llm = FakeChatModel(
+        [
+            safe_screen(),
+            ai_with_tool("find_department", {"query": "Cardiology"}),
+            ai_with_tool(
+                "complete_routing",
+                _routing(patient, dept, needs_document=True),
+            ),
+            ai_with_tool("list_available_slots", _slot_window(slot, dept)),
+            ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+            *insurance_and_billing_responses(),
+            safe_screen("Booking is safe."),
+        ]
+    )
+
+    run = start_workflow(
+        patient.id,
+        "I need a cardiology appointment next week. My ECG report is attached.",
+        document_id=doc.id,
+    )
+
+    assert run.status == "awaiting_confirmation"
+
+    _fresh_graph_after_restart()
+
+    fake_llm.llm = FakeChatModel(
+        [
+            ai_with_tool("get_patient_documents", {"patient_id": patient.id}),
+            ai_with_tool("classify_document", {"filename": "ecg_report.pdf"}),
+            ai_with_tool(
+                "attach_document_to_appointment",
+                {"document_id": doc.id, "appointment_id": db.query(Appointment).one().id},
+            ),
+            ai_with_tool("complete_document_check", {"message": "ECG verified"}),
+            ai_with_tool("create_reminder", _reminder_args(patient, db.query(Appointment).one())),
+            ai_with_tool("complete_followup", {"message": "Reminder scheduled"}),
+            safe_screen("Final answer is safe."),
+        ]
+    )
+
+    resumed = resume_workflow(run.id, "Confirmed — please continue.")
+
+    assert resumed.status == "completed"
+    db.refresh(doc)
+    assert doc.appointment_id == db.query(Appointment).one().id
