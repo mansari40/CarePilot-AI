@@ -22,13 +22,22 @@ never re-entered on resume.
 Phase 7: Incoming non-English requests are translated to English before the
 graph.  Outgoing patient-facing text (final_response) is translated back into
 the patient's preferred_language after the graph completes.
+
+Timeout safety: both ``start_workflow`` and ``resume_workflow`` wrap the
+overall ``graph.invoke()`` with a configurable hard timeout (default 120 s)
+via :func:`_invoke_with_timeout`.  Individual LLM calls are separately
+protected by ``ChatGroq(timeout=...)`` in :mod:`groq_client`.  When either
+layer fires, the WorkflowRun is marked *failed* with a clear user-facing
+message so the frontend never shows a stuck spinner.
 """
 
 import logging
+import threading
 import time
 
 from langchain_core.messages import HumanMessage
 
+from app.config import get_settings
 from app.core.graph import get_graph
 from app.core.persistence import create_workflow_run, get_workflow_run, update_workflow_run
 from app.core.state import (
@@ -36,6 +45,7 @@ from app.core.state import (
     RUN_STATUS_AWAITING_CONFIRMATION,
     RUN_STATUS_AWAITING_DOCUMENT,
     RUN_STATUS_IN_PROGRESS,
+    RUN_STATUS_FAILED,
 )
 from app.db.models import PatientProfile, WorkflowRun
 from app.services.translation import (
@@ -46,6 +56,11 @@ from app.services.translation import (
 
 logger = logging.getLogger(__name__)
 
+_TIMEOUT_MESSAGE = (
+    "The request took too long to process — please try again. "
+    "If the problem persists, contact support."
+)
+
 _NODE_BOOK_APPOINTMENT = "book_appointment"
 _NODE_DOCUMENT_INGEST = "document_ingest"
 _NODE_ROUTE_DEPARTMENT = "route_department"
@@ -53,6 +68,38 @@ _NODE_ROUTE_DEPARTMENT = "route_department"
 
 def _config(run: WorkflowRun) -> dict:
     return {"configurable": {"thread_id": run.thread_id}}
+
+
+class WorkflowTimeoutError(Exception):
+    """Raised when the overall graph invocation exceeds its time budget."""
+
+
+def _invoke_with_timeout(graph, input_state: dict | None, config: dict, timeout_s: int) -> None:
+    """Run ``graph.invoke()`` in a daemon thread with a hard wall-clock timeout.
+
+    If the graph does not finish within *timeout_s* seconds, a
+    :class:`WorkflowTimeoutError` is raised.  The background thread is a daemon
+    thread so it does not prevent process exit.  The caller is responsible for
+    marking the WorkflowRun as failed.
+    """
+    _exc: list[Exception | None] = [None]
+
+    def _target() -> None:
+        try:
+            graph.invoke(input_state, config)
+        except Exception as exc:
+            _exc[0] = exc
+
+    thread = threading.Thread(target=_target, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_s)
+
+    if thread.is_alive():
+        raise WorkflowTimeoutError(
+            f"Graph invocation exceeded {timeout_s}s timeout"
+        )
+    if _exc[0] is not None:
+        raise _exc[0]
 
 
 def _resume_node(status: str) -> str:
@@ -101,10 +148,12 @@ def start_workflow(
     )
 
     run = create_workflow_run(patient_id, english_text)
+    timeout_s = get_settings().workflow_timeout
     t_graph = time.monotonic()
     try:
         graph = get_graph()
-        graph.invoke(
+        _invoke_with_timeout(
+            graph,
             {
                 "workflow_run_id": run.id,
                 "patient_id": patient_id,
@@ -122,7 +171,17 @@ def start_workflow(
                 **({"document_id": document_id} if document_id is not None else {}),
             },
             _config(run),
+            timeout_s,
         )
+    except WorkflowTimeoutError:
+        elapsed = time.monotonic() - t_graph
+        logger.error("workflow_timeout elapsed=%.1fs timeout=%ds", elapsed, timeout_s)
+        update_workflow_run(
+            run.id,
+            status=RUN_STATUS_FAILED,
+            state_payload={"error": _TIMEOUT_MESSAGE},
+        )
+        return get_workflow_run(run.id)  # type: ignore[return-value]
     except Exception as exc:
         logger.error("workflow_graph_error elapsed=%.1fs error=%s", time.monotonic() - t_graph, exc)
         update_workflow_run(
@@ -179,8 +238,18 @@ def resume_workflow(
     if document_id is not None:
         updates["document_id"] = document_id
     graph.update_state(_config(run), updates, as_node=node)
+
+    timeout_s = get_settings().workflow_timeout
     try:
-        graph.invoke(None, _config(run))
+        _invoke_with_timeout(graph, None, _config(run), timeout_s)
+    except WorkflowTimeoutError:
+        logger.error("workflow_resume_timeout run_id=%d timeout=%ds", run_id, timeout_s)
+        update_workflow_run(
+            run.id,
+            status=RUN_STATUS_FAILED,
+            state_payload={**(run.state or {}), "error": _TIMEOUT_MESSAGE},
+        )
+        return get_workflow_run(run.id)  # type: ignore[return-value]
     except Exception as exc:
         update_workflow_run(
             run.id,

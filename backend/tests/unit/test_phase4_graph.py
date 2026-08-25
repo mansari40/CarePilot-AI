@@ -1089,3 +1089,111 @@ def test_explicit_document_request_still_pauses_for_document(db, fake_llm):
     assert resumed.status == "completed"
     db.refresh(doc)
     assert doc.appointment_id == db.query(Appointment).one().id
+
+
+# ---------------------------------------------------------------------------
+# Timeout safety tests
+# ---------------------------------------------------------------------------
+
+import time as _time
+
+from app.config import Settings
+from app.core import orchestrator as orch_mod
+from app.core.orchestrator import WorkflowTimeoutError
+
+
+class SlowFakeChatModel:
+    """Fake LLM whose invoke() sleeps, simulating a hung Groq connection."""
+
+    def __init__(self, delay: float = 999):
+        self.delay = delay
+        self.call_count = 0
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def invoke(self, messages):
+        self.call_count += 1
+        _time.sleep(self.delay)
+        raise AssertionError("Should never reach here — timeout should fire first")
+
+
+def test_start_workflow_times_out_cleanly(db, fake_llm, monkeypatch):
+    """A hung LLM causes start_workflow to fail within the configured timeout."""
+    patient = make_patient(db)
+    fake_llm.llm = SlowFakeChatModel(delay=999)
+
+    # Set a very short workflow timeout so the test runs fast.
+    monkeypatch.setattr(orch_mod, "get_settings", lambda: Settings(
+        groq_api_key="test",
+        workflow_timeout=2,
+    ))
+
+    t0 = _time.monotonic()
+    run = start_workflow(patient.id, "I need a cardiology appointment")
+    elapsed = _time.monotonic() - t0
+
+    assert run.status == "failed"
+    assert "too long" in run.state["error"]
+    # Must complete well within 10 s even with the 2 s timeout + overhead.
+    assert elapsed < 10, f"start_workflow took {elapsed:.1f}s — likely hung"
+
+
+def test_resume_workflow_times_out_cleanly(db, fake_llm, monkeypatch):
+    """A hung LLM causes resume_workflow to fail within the configured timeout."""
+    patient = make_patient(db)
+    dept = make_department(db, name="Cardiology")
+    doctor = make_doctor(db, dept.id)
+    slot = make_slot(db, doctor.id)
+
+    # First: run a normal workflow that pauses at awaiting_confirmation.
+    fake_llm.llm = FakeChatModel(
+        [
+            safe_screen(),
+            ai_with_tool("find_department", {"query": "Cardiology"}),
+            ai_with_tool("complete_routing", _routing(patient, dept)),
+            ai_with_tool("list_available_slots", _slot_window(slot, dept)),
+            ai_with_tool("book_appointment", _booking_args(patient, dept, doctor, slot)),
+        ]
+    )
+    run = start_workflow(patient.id, "Cardiology appointment")
+    assert run.status == "awaiting_confirmation"
+
+    # Now inject a slow fake for the resume path.
+    fake_llm.llm = SlowFakeChatModel(delay=999)
+    monkeypatch.setattr(orch_mod, "get_settings", lambda: Settings(
+        groq_api_key="test",
+        workflow_timeout=2,
+    ))
+
+    t0 = _time.monotonic()
+    resumed = resume_workflow(run.id, "confirmed")
+    elapsed = _time.monotonic() - t0
+
+    assert resumed.status == "failed"
+    assert "too long" in resumed.state["error"]
+    assert elapsed < 10, f"resume_workflow took {elapsed:.1f}s — likely hung"
+
+
+def test_groq_timeout_setting_applied(monkeypatch):
+    """ChatGroq receives the configured groq_timeout."""
+    from unittest.mock import patch as _patch
+
+    from langchain_groq import ChatGroq
+
+    captured_kwargs = {}
+
+    original_init = ChatGroq.__init__
+
+    def capturing_init(self, *args, **kwargs):
+        captured_kwargs.update(kwargs)
+        original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(orch_mod, "get_settings", lambda: Settings(
+        groq_api_key="test-key",
+        groq_timeout=99,
+    ))
+    monkeypatch.setattr(ChatGroq, "__init__", capturing_init)
+
+    llm = groq_client.get_llm()
+    assert captured_kwargs.get("timeout") == 99

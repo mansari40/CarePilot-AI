@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     groq_model_fast: str = "openai/gpt-oss-20b"
+    groq_timeout: int = 45
+    workflow_timeout: int = 120
 
     jwt_secret_key: str = "change-me"
     jwt_algorithm: str = "HS256"
